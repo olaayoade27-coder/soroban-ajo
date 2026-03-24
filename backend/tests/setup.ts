@@ -1,24 +1,28 @@
-import dotenv from 'dotenv';
+import { execSync } from 'child_process'
+import path from 'path'
+import dotenv from 'dotenv'
 
-// Load test environment variables
-dotenv.config({ path: '.env.test' });
+// Runs once before all test suites (Jest globalSetup)
+export default async function globalSetup() {
+  // Load test environment variables
+  dotenv.config({ path: path.resolve(__dirname, '../.env.test') })
 
-// Set test environment
-process.env.NODE_ENV = 'test';
-process.env.PORT = '3002';
-process.env.SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
-process.env.SOROBAN_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
-process.env.SOROBAN_CONTRACT_ID = 'test-contract-id';
+  // Ensure DATABASE_URL is set for migrations
+  const databaseUrl = process.env.DATABASE_URL
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is not defined in .env.test — cannot run migrations')
+  }
 
-// Global test timeout
-jest.setTimeout(10000);
+  // Apply all pending Prisma migrations to the test database
+  execSync('npx prisma migrate deploy', {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: 'inherit',
+  })
+}
 
-// Mock console methods to reduce noise in tests
-global.console = {
-  ...console,
-  log: jest.fn(),
-  debug: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-};
+// Runs once after all test suites (Jest globalTeardown)
+export async function globalTeardown() {
+  const { prisma } = await import('../src/config/database')
+  await prisma.$disconnect()
+}
