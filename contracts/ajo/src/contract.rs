@@ -4,7 +4,10 @@ use crate::errors::AjoError;
 use crate::events;
 use crate::pausable;
 use crate::storage;
-use crate::types::{Group, GroupMetadata, GroupStatus, PayoutOrderingStrategy};
+use crate::types::{
+    AchievementRecord, Group, GroupMetadata, GroupStatus, MemberStats,
+    MilestoneRecord, PayoutOrderingStrategy,
+};
 use crate::utils;
 
 /// The main Ajo contract
@@ -349,6 +352,12 @@ impl AjoContract {
         // Emit event
         events::emit_member_joined(&env, group_id, &member);
 
+        // Update member stats
+        let mut stats = storage::get_member_stats(&env, &member)
+            .unwrap_or_else(|| utils::default_member_stats(&env, &member));
+        stats.total_groups_joined += 1;
+        storage::store_member_stats(&env, &member, &stats);
+
         Ok(())
     }
 
@@ -466,6 +475,27 @@ impl AjoContract {
             current_cycle,
             contribution_amount,
         );
+
+        // Update member stats
+        let mut stats = storage::get_member_stats(&env, &member)
+            .unwrap_or_else(|| utils::default_member_stats(&env, &member));
+        stats.total_contributions += 1;
+        stats.on_time_contributions += 1;
+        stats.total_amount_contributed += contribution_amount;
+        storage::store_member_stats(&env, &member, &stats);
+
+        // Check and record member achievements
+        let achievements = utils::check_member_achievements(&env, &member, &stats);
+        for achievement in achievements.iter() {
+            let record = AchievementRecord {
+                member: member.clone(),
+                achievement,
+                earned_at: utils::get_current_timestamp(&env),
+                group_id: group_id_cached,
+            };
+            storage::add_member_achievement(&env, &member, &record);
+            events::emit_achievement_earned(&env, &member, record.achievement as u32, group_id_cached);
+        }
 
         Ok(())
     }
@@ -646,6 +676,29 @@ impl AjoContract {
 
         // Update storage (single write)
         storage::store_group(&env, group_id, &group);
+
+        // Check and record group milestones
+        let milestones = utils::check_group_milestones(&env, &group);
+        for milestone in milestones.iter() {
+            let record = MilestoneRecord {
+                group_id: group.id,
+                milestone,
+                achieved_at: utils::get_current_timestamp(&env),
+                cycle_number: current_cycle,
+            };
+            storage::add_group_milestone(&env, group.id, &record);
+            events::emit_milestone_achieved(&env, group.id, record.milestone as u32, current_cycle);
+        }
+
+        // If group completed, update member stats for all members
+        if group.is_complete {
+            for member in group.members.iter() {
+                let mut stats = storage::get_member_stats(&env, &member)
+                    .unwrap_or_else(|| utils::default_member_stats(&env, &member));
+                stats.total_groups_completed += 1;
+                storage::store_member_stats(&env, &member, &stats);
+            }
+        }
 
         Ok(())
     }
@@ -1567,5 +1620,36 @@ impl AjoContract {
         cycle: u32,
     ) -> Result<crate::types::PayoutOrder, AjoError> {
         storage::get_payout_order(&env, group_id, cycle).ok_or(AjoError::GroupNotFound)
+    }
+
+    // ── Milestones & Achievements ─────────────────────────────────────────
+
+    /// Returns all milestones achieved by a group.
+    pub fn get_group_milestones(
+        env: Env,
+        group_id: u64,
+    ) -> Result<Vec<MilestoneRecord>, AjoError> {
+        // Verify group exists
+        storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+        Ok(storage::get_group_milestones(&env, group_id)
+            .unwrap_or_else(|| Vec::new(&env)))
+    }
+
+    /// Returns all achievements earned by a member.
+    pub fn get_member_achievements(
+        env: Env,
+        member: Address,
+    ) -> Result<Vec<AchievementRecord>, AjoError> {
+        Ok(storage::get_member_achievements(&env, &member)
+            .unwrap_or_else(|| Vec::new(&env)))
+    }
+
+    /// Returns aggregated statistics for a member across all groups.
+    pub fn get_member_stats(
+        env: Env,
+        member: Address,
+    ) -> Result<MemberStats, AjoError> {
+        Ok(storage::get_member_stats(&env, &member)
+            .unwrap_or_else(|| utils::default_member_stats(&env, &member)))
     }
 }

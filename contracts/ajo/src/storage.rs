@@ -58,6 +58,18 @@ pub enum StorageKey {
     /// Global insurance claim counter.
     /// Stored in instance storage under `"ICONT"`.
     ClaimCounter,
+
+    /// Group milestones list.
+    /// Stored in persistent storage under `("GMILE", group_id)`.
+    GroupMilestones(u64),
+
+    /// Member achievements list.
+    /// Stored in persistent storage under `("MACHIEV", member)`.
+    MemberAchievements(Address),
+
+    /// Aggregated member statistics.
+    /// Stored in persistent storage under `("MSTATS", member)`.
+    MemberStatsData(Address),
 }
 
 impl StorageKey {
@@ -86,6 +98,9 @@ impl StorageKey {
             StorageKey::InsurancePool(_) => symbol_short!("INSPOOL"),
             StorageKey::InsuranceClaim(_) => symbol_short!("INSCLAIM"),
             StorageKey::ClaimCounter => symbol_short!("ICONT"),
+            StorageKey::GroupMilestones(_) => symbol_short!("GMILE"),
+            StorageKey::MemberAchievements(_) => symbol_short!("MACHIEV"),
+            StorageKey::MemberStatsData(_) => symbol_short!("MSTATS"),
         }
     }
 }
@@ -629,5 +644,59 @@ pub fn get_payout_order(
     cycle: u32,
 ) -> Option<crate::types::PayoutOrder> {
     let key = (symbol_short!("PORDER"), group_id, cycle);
+    env.storage().persistent().get(&key)
+}
+
+// ── Milestone & achievement storage ───────────────────────────────────────
+
+/// Stores group milestones list.
+pub fn store_group_milestones(env: &Env, group_id: u64, milestones: &Vec<crate::types::MilestoneRecord>) {
+    let key = (symbol_short!("GMILE"), group_id);
+    env.storage().persistent().set(&key, milestones);
+}
+
+/// Retrieves group milestones.
+pub fn get_group_milestones(env: &Env, group_id: u64) -> Option<Vec<crate::types::MilestoneRecord>> {
+    let key = (symbol_short!("GMILE"), group_id);
+    env.storage().persistent().get(&key)
+}
+
+/// Adds a single milestone to a group's milestone list.
+pub fn add_group_milestone(env: &Env, group_id: u64, record: &crate::types::MilestoneRecord) {
+    let mut milestones = get_group_milestones(env, group_id)
+        .unwrap_or_else(|| Vec::new(env));
+    milestones.push_back(record.clone());
+    store_group_milestones(env, group_id, &milestones);
+}
+
+/// Stores member achievements list.
+pub fn store_member_achievements(env: &Env, member: &Address, achievements: &Vec<crate::types::AchievementRecord>) {
+    let key = (symbol_short!("MACHIEV"), member);
+    env.storage().persistent().set(&key, achievements);
+}
+
+/// Retrieves member achievements.
+pub fn get_member_achievements(env: &Env, member: &Address) -> Option<Vec<crate::types::AchievementRecord>> {
+    let key = (symbol_short!("MACHIEV"), member);
+    env.storage().persistent().get(&key)
+}
+
+/// Adds a single achievement to a member's list.
+pub fn add_member_achievement(env: &Env, member: &Address, record: &crate::types::AchievementRecord) {
+    let mut achievements = get_member_achievements(env, member)
+        .unwrap_or_else(|| Vec::new(env));
+    achievements.push_back(record.clone());
+    store_member_achievements(env, member, &achievements);
+}
+
+/// Stores aggregated member statistics.
+pub fn store_member_stats(env: &Env, member: &Address, stats: &crate::types::MemberStats) {
+    let key = (symbol_short!("MSTATS"), member);
+    env.storage().persistent().set(&key, stats);
+}
+
+/// Retrieves aggregated member statistics.
+pub fn get_member_stats(env: &Env, member: &Address) -> Option<crate::types::MemberStats> {
+    let key = (symbol_short!("MSTATS"), member);
     env.storage().persistent().get(&key)
 }

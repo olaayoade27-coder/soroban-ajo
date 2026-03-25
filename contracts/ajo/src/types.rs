@@ -392,3 +392,63 @@ pub struct InsurancePool {
     /// Total amount of claims filed.
     pub pending_claims_count: u32,
 }
+
+/// Group-level milestones that track progress through the savings cycle.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum GroupMilestone {
+    FirstPayout = 0,
+    HalfwayComplete = 1,
+    ThreeQuartersComplete = 2,
+    FullyCompleted = 3,
+    PerfectAttendance = 4,
+    ZeroPenalties = 5,
+}
+
+/// Individual member achievements earned through participation.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum MemberAchievement {
+    FirstContribution = 0,
+    PerfectAttendance = 1,
+    EarlyBird = 2,
+    Reliable = 3,
+    Veteran = 4,
+    HighRoller = 5,
+}
+
+/// Records a group milestone with context.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MilestoneRecord {
+    pub group_id: u64,
+    pub milestone: GroupMilestone,
+    pub achieved_at: u64,
+    pub cycle_number: u32,
+}
+
+/// Records a member achievement with context.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AchievementRecord {
+    pub member: Address,
+    pub achievement: MemberAchievement,
+    pub earned_at: u64,
+    pub group_id: u64,
+}
+
+/// Aggregated statistics for a member across all groups.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberStats {
+    pub member: Address,
+    pub total_groups_joined: u32,
+    pub total_groups_completed: u32,
+    pub total_contributions: u32,
+    pub on_time_contributions: u32,
+    pub late_contributions: u32,
+    pub total_amount_contributed: i128,
+    pub achievements: Vec<MemberAchievement>,
+}

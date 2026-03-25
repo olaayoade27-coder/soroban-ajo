@@ -157,3 +157,25 @@ pub fn emit_payout_order_determined(
     let topics = (symbol_short!("porder"), group_id, cycle);
     env.events().publish(topics, (recipient, strategy));
 }
+
+/// Emit an event when a group milestone is achieved
+pub fn emit_milestone_achieved(
+    env: &Env,
+    group_id: u64,
+    milestone: u32,
+    cycle: u32,
+) {
+    let topics = (symbol_short!("mileston"), group_id);
+    env.events().publish(topics, (milestone, cycle));
+}
+
+/// Emit an event when a member earns an achievement
+pub fn emit_achievement_earned(
+    env: &Env,
+    member: &Address,
+    achievement: u32,
+    group_id: u64,
+) {
+    let topics = (symbol_short!("achieve"), group_id);
+    env.events().publish(topics, (member, achievement));
+}
