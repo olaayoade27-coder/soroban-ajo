@@ -5,7 +5,7 @@ use crate::events;
 use crate::pausable;
 use crate::storage;
 use crate::types::{
-    AchievementRecord, Group, GroupMetadata, GroupStatus, MemberStats,
+    AchievementRecord, Group, GroupAccessType, GroupMetadata, GroupStatus, MemberStats,
     MilestoneRecord, PayoutOrderingStrategy,
 };
 use crate::utils;
@@ -192,6 +192,7 @@ impl AjoContract {
                 is_enabled: insurance_rate_bps > 0,
             },
             payout_strategy: PayoutOrderingStrategy::Sequential,
+            access_type: crate::types::GroupAccessType::Open,
         };
 
         // Store group
@@ -316,22 +317,22 @@ impl AjoContract {
             GroupAccessType::InviteOnly => {
                 // Check for valid invitation
                 let invitation = storage::get_invitation(&env, group_id, &member)
-                    .ok_or(AjoError::InvitationNotFound)?;
+                    .ok_or(AjoError::Unauthorized)?;
 
                 // Check if invitation is expired
                 let now = utils::get_current_timestamp(&env);
                 if now > invitation.expires_at {
-                    return Err(AjoError::InvitationExpired);
+                    return Err(AjoError::OutsideCycleWindow);
                 }
 
                 // Check if already accepted
                 if invitation.accepted {
-                    return Err(AjoError::InvitationAlreadyAccepted);
+                    return Err(AjoError::AlreadyMember);
                 }
             }
             GroupAccessType::ApprovalRequired => {
                 // Direct joining is not allowed for approval-required groups
-                return Err(AjoError::GroupAccessRestricted);
+                return Err(AjoError::Unauthorized);
             }
         }
 
@@ -1529,6 +1530,7 @@ impl AjoContract {
                 is_enabled: insurance_rate_bps > 0,
             },
             payout_strategy,
+            access_type: crate::types::GroupAccessType::Open,
         };
 
         storage::store_group(&env, group_id, &group);
@@ -1651,5 +1653,407 @@ impl AjoContract {
     ) -> Result<MemberStats, AjoError> {
         Ok(storage::get_member_stats(&env, &member)
             .unwrap_or_else(|| utils::default_member_stats(&env, &member)))
+    }
+
+    // ── Multi-token support ───────────────────────────────────────────────
+
+    /// Create a new multi-token Ajo group that accepts contributions in
+    /// multiple Stellar assets.
+    ///
+    /// The first token in `accepted_tokens` is the *primary* token and is
+    /// also stored as the group's `token_address` for backward-compatible
+    /// queries.  The `contribution_amount` is denominated in the primary
+    /// token; for other tokens the required amount is scaled by weight.
+    ///
+    /// # Arguments
+    /// * `env`                 - The Soroban contract environment
+    /// * `creator`             - Address of the group creator
+    /// * `accepted_tokens`     - List of [`TokenConfig`] (address + weight)
+    /// * `contribution_amount` - Base contribution per cycle in primary-token units
+    /// * `cycle_duration`      - Cycle length in seconds
+    /// * `max_members`         - Cap on group membership (2–100)
+    /// * `grace_period`        - Seconds after cycle end before penalty kicks in
+    /// * `penalty_rate`        - Late-contribution penalty as a percentage (0–100)
+    /// * `insurance_rate_bps`  - Insurance premium in basis points (0 = disabled)
+    ///
+    /// # Errors
+    /// * `EmptyTokenList`   – `accepted_tokens` is empty
+    /// * `TooManyTokens`    – more than [`MAX_ACCEPTED_TOKENS`] entries
+    /// * `InvalidWeight`    – any token has `weight == 0`
+    /// * `DuplicateToken`   – the same address appears twice
+    /// * Standard group-creation errors from [`validate_group_params`]
+    pub fn create_multi_token_group(
+        env: Env,
+        creator: Address,
+        accepted_tokens: Vec<crate::types::TokenConfig>,
+        contribution_amount: i128,
+        cycle_duration: u64,
+        max_members: u32,
+        grace_period: u64,
+        penalty_rate: u32,
+        insurance_rate_bps: u32,
+    ) -> Result<u64, AjoError> {
+        // Validate token list
+        utils::validate_token_list(&env, &accepted_tokens)?;
+
+        // Standard parameter validation
+        utils::validate_group_params(contribution_amount, cycle_duration, max_members)?;
+        utils::validate_penalty_params(grace_period, penalty_rate)?;
+        pausable::ensure_not_paused(&env)?;
+        creator.require_auth();
+
+        let group_id = storage::get_next_group_id(&env);
+        let mut members = Vec::new(&env);
+        members.push_back(creator.clone());
+        let now = utils::get_current_timestamp(&env);
+
+        // Use the first token as the primary / backward-compatible token_address
+        let primary_token = accepted_tokens.get(0).unwrap();
+
+        let group = Group {
+            id: group_id,
+            creator: creator.clone(),
+            token_address: primary_token.address.clone(),
+            contribution_amount,
+            cycle_duration,
+            max_members,
+            members,
+            current_cycle: 1,
+            payout_index: 0,
+            created_at: now,
+            cycle_start_time: now,
+            is_complete: false,
+            grace_period,
+            penalty_rate,
+            state: crate::types::GroupState::Active,
+            insurance_config: crate::types::InsuranceConfig {
+                rate_bps: insurance_rate_bps,
+                is_enabled: insurance_rate_bps > 0,
+            },
+            payout_strategy: PayoutOrderingStrategy::Sequential,
+            access_type: crate::types::GroupAccessType::Open,
+        };
+
+        storage::store_group(&env, group_id, &group);
+
+        // Store the multi-token configuration alongside the group
+        let mt_config = crate::types::MultiTokenConfig {
+            group_id,
+            accepted_tokens: accepted_tokens.clone(),
+        };
+        storage::store_multi_token_config(&env, group_id, &mt_config);
+
+        events::emit_multi_token_group_created(
+            &env,
+            group_id,
+            &creator,
+            contribution_amount,
+            accepted_tokens.len(),
+        );
+
+        Ok(group_id)
+    }
+
+    /// Contribute to a multi-token group using a specific accepted token.
+    ///
+    /// The required amount is calculated from the group's base
+    /// `contribution_amount` and the token's weight relative to the
+    /// primary token:
+    ///
+    /// ```text
+    /// required = contribution_amount × primary_weight / token_weight
+    /// ```
+    ///
+    /// After a successful transfer the member's contribution is recorded
+    /// exactly like a normal `contribute` call so that existing payout
+    /// logic continues to work.
+    ///
+    /// # Arguments
+    /// * `env`           - The Soroban contract environment
+    /// * `member`        - The contributing member (must authenticate)
+    /// * `group_id`      - Target group
+    /// * `token_address` - The token to contribute with
+    ///
+    /// # Errors
+    /// * `NotMultiTokenGroup` – group was not created with multi-token support
+    /// * `TokenNotAccepted`   – `token_address` is not in accepted list
+    /// * Standard contribution errors (NotMember, AlreadyContributed, etc.)
+    pub fn contribute_with_token(
+        env: Env,
+        member: Address,
+        group_id: u64,
+        token_address: Address,
+    ) -> Result<(), AjoError> {
+        pausable::ensure_not_paused(&env)?;
+        member.require_auth();
+
+        let group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        if group.is_complete {
+            return Err(AjoError::GroupComplete);
+        }
+        if group.state == crate::types::GroupState::Cancelled {
+            return Err(AjoError::GroupCancelled);
+        }
+        if !utils::is_member(&group.members, &member) {
+            return Err(AjoError::NotMember);
+        }
+        if storage::has_contributed(&env, group.id, group.current_cycle, &member) {
+            return Err(AjoError::AlreadyContributed);
+        }
+
+        // Fetch multi-token config — fail if this is a single-token group
+        let mt_config = storage::get_multi_token_config(&env, group_id)
+            .ok_or(AjoError::NotMultiTokenGroup)?;
+
+        // Locate the requested token in the accepted list
+        let (token_cfg, primary_weight) =
+            utils::find_token_config(&mt_config, &token_address)?;
+
+        // Calculate the required amount in the chosen token's units
+        let required_amount = utils::calculate_equivalent_amount(
+            group.contribution_amount,
+            primary_weight,
+            token_cfg.weight,
+        );
+
+        let contract_address = env.current_contract_address();
+
+        // Balance check and transfer
+        crate::token::check_balance(&env, &token_address, &member, required_amount)?;
+        crate::token::transfer_token(
+            &env,
+            &token_address,
+            &member,
+            &contract_address,
+            required_amount,
+        )?;
+
+        // Mark the standard contribution flag (keeps existing payout logic working)
+        storage::store_contribution(&env, group.id, group.current_cycle, &member, true);
+
+        // Store token-specific record for auditability
+        let tk_record = crate::types::TokenContribution {
+            member: member.clone(),
+            token: token_address.clone(),
+            amount: required_amount,
+            cycle: group.current_cycle,
+        };
+        storage::store_token_contribution(&env, group.id, group.current_cycle, &member, &tk_record);
+
+        // Track per-token balance for multi-token payout
+        storage::add_group_token_balance(
+            &env,
+            group.id,
+            group.current_cycle,
+            &token_address,
+            required_amount,
+        );
+
+        // Insurance premium
+        if group.insurance_config.is_enabled {
+            let premium = crate::insurance::calculate_premium(
+                required_amount,
+                group.insurance_config.rate_bps,
+            );
+            if premium > 0 {
+                crate::insurance::deposit_to_pool(&env, &token_address, premium);
+            }
+        }
+
+        events::emit_token_contribution(
+            &env,
+            group.id,
+            &member,
+            &token_address,
+            required_amount,
+            group.current_cycle,
+        );
+
+        // Update member stats
+        let mut stats = storage::get_member_stats(&env, &member)
+            .unwrap_or_else(|| utils::default_member_stats(&env, &member));
+        stats.total_contributions += 1;
+        stats.on_time_contributions += 1;
+        stats.total_amount_contributed += required_amount;
+        storage::store_member_stats(&env, &member, &stats);
+
+        Ok(())
+    }
+
+    /// Execute payout for a multi-token group.
+    ///
+    /// For each accepted token that has a non-zero accumulated balance in
+    /// the current cycle, the full balance is transferred to the payout
+    /// recipient.  This means the recipient receives contributions in each
+    /// token that members actually used.
+    ///
+    /// All the standard payout guards apply (all contributed, grace period
+    /// expired, group not complete, etc.).
+    ///
+    /// # Errors
+    /// * `NotMultiTokenGroup` – group was not created with multi-token support
+    /// * Standard payout errors (IncompleteContributions, GroupComplete, etc.)
+    pub fn execute_multi_token_payout(env: Env, group_id: u64) -> Result<(), AjoError> {
+        pausable::ensure_not_paused(&env)?;
+
+        let mut group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        if group.state == crate::types::GroupState::Cancelled {
+            return Err(AjoError::GroupCancelled);
+        }
+        if group.is_complete {
+            return Err(AjoError::GroupComplete);
+        }
+        if !utils::all_members_contributed(&env, &group) {
+            return Err(AjoError::IncompleteContributions);
+        }
+
+        let current_time = utils::get_current_timestamp(&env);
+        let grace_end = utils::get_grace_period_end(&group);
+        if current_time < grace_end {
+            return Err(AjoError::OutsideCycleWindow);
+        }
+
+        let mt_config = storage::get_multi_token_config(&env, group_id)
+            .ok_or(AjoError::NotMultiTokenGroup)?;
+
+        let payout_recipient = utils::determine_next_recipient(&env, &group)?;
+        let contract_address = env.current_contract_address();
+        let current_cycle = group.current_cycle;
+
+        // Transfer each token's accumulated balance to the recipient
+        for tc in mt_config.accepted_tokens.iter() {
+            let balance = storage::get_group_token_balance(
+                &env,
+                group.id,
+                current_cycle,
+                &tc.address,
+            );
+            if balance > 0 {
+                // Add any penalty bonus proportionally from the primary token pool
+                let penalty_bonus = if tc.address == group.token_address {
+                    storage::get_cycle_penalty_pool(&env, group.id, current_cycle)
+                } else {
+                    0
+                };
+                let payout_amount = balance + penalty_bonus;
+
+                crate::token::check_contract_balance(
+                    &env,
+                    &tc.address,
+                    &contract_address,
+                    payout_amount,
+                )?;
+
+                crate::token::transfer_token(
+                    &env,
+                    &tc.address,
+                    &contract_address,
+                    &payout_recipient,
+                    payout_amount,
+                )?;
+
+                events::emit_multi_token_payout(
+                    &env,
+                    group.id,
+                    &payout_recipient,
+                    &tc.address,
+                    payout_amount,
+                    current_cycle,
+                );
+            }
+        }
+
+        storage::mark_payout_received(&env, group.id, &payout_recipient);
+
+        events::emit_payout_order_determined(
+            &env,
+            group.id,
+            current_cycle,
+            &payout_recipient,
+            group.payout_strategy as u32,
+        );
+
+        // Advance cycle or mark complete
+        group.payout_index += 1;
+        if group.payout_index >= group.members.len() as u32 {
+            group.is_complete = true;
+            group.state = crate::types::GroupState::Complete;
+            events::emit_group_completed(&env, group.id);
+        } else {
+            group.current_cycle += 1;
+            group.cycle_start_time = utils::get_current_timestamp(&env);
+        }
+
+        storage::store_group(&env, group_id, &group);
+
+        // Milestones
+        let milestones = utils::check_group_milestones(&env, &group);
+        for milestone in milestones.iter() {
+            let record = MilestoneRecord {
+                group_id: group.id,
+                milestone,
+                achieved_at: utils::get_current_timestamp(&env),
+                cycle_number: current_cycle,
+            };
+            storage::add_group_milestone(&env, group.id, &record);
+            events::emit_milestone_achieved(&env, group.id, record.milestone as u32, current_cycle);
+        }
+
+        if group.is_complete {
+            for m in group.members.iter() {
+                let mut stats = storage::get_member_stats(&env, &m)
+                    .unwrap_or_else(|| utils::default_member_stats(&env, &m));
+                stats.total_groups_completed += 1;
+                storage::store_member_stats(&env, &m, &stats);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the multi-token configuration for a group.
+    ///
+    /// # Errors
+    /// * `NotMultiTokenGroup` – group has no multi-token config
+    pub fn get_multi_token_config(
+        env: Env,
+        group_id: u64,
+    ) -> Result<crate::types::MultiTokenConfig, AjoError> {
+        storage::get_multi_token_config(&env, group_id)
+            .ok_or(AjoError::NotMultiTokenGroup)
+    }
+
+    /// Returns the accepted tokens for a multi-token group.
+    ///
+    /// # Errors
+    /// * `NotMultiTokenGroup` – group has no multi-token config
+    pub fn get_accepted_tokens(
+        env: Env,
+        group_id: u64,
+    ) -> Result<Vec<crate::types::TokenConfig>, AjoError> {
+        let config = storage::get_multi_token_config(&env, group_id)
+            .ok_or(AjoError::NotMultiTokenGroup)?;
+        Ok(config.accepted_tokens)
+    }
+
+    /// Returns the token-specific contribution record for a member in a cycle.
+    ///
+    /// # Errors
+    /// * `GroupNotFound` – no contribution record found
+    pub fn get_token_contribution(
+        env: Env,
+        group_id: u64,
+        cycle: u32,
+        member: Address,
+    ) -> Result<crate::types::TokenContribution, AjoError> {
+        storage::get_token_contribution(&env, group_id, cycle, &member)
+            .ok_or(AjoError::GroupNotFound)
+    }
+
+    /// Returns whether a group is configured for multi-token contributions.
+    pub fn is_multi_token_group(env: Env, group_id: u64) -> bool {
+        storage::is_multi_token_group(&env, group_id)
     }
 }

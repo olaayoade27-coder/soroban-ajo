@@ -29,3 +29,4 @@ pub use errors::AjoError;
 pub use types::{GroupState, RefundReason, RefundRequest, RefundRecord, RefundVote};
 pub use types::{PayoutOrderingStrategy, PayoutVote, PayoutOrder};
 pub use types::{GroupMilestone, MemberAchievement, MilestoneRecord, AchievementRecord, MemberStats};
+pub use types::{TokenConfig, MultiTokenConfig, TokenContribution};
