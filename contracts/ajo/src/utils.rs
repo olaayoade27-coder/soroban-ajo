@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::types::{Group, PayoutOrder, PayoutOrderingStrategy};
+use crate::types::{Group, GroupMilestone, MemberAchievement, PayoutOrder, PayoutOrderingStrategy};
 use crate::errors::AjoError;
 
 /// Returns `true` if `address` appears in the group's `members` list.
@@ -311,4 +311,123 @@ fn get_eligible_members(env: &Env, group: &Group) -> Result<Vec<Address>, AjoErr
         return Err(AjoError::NoEligibleMembers);
     }
     Ok(eligible)
+}
+
+// ── Milestone & achievement detection ─────────────────────────────────────
+
+/// Checks which group milestones have been newly achieved based on group state.
+pub fn check_group_milestones(env: &Env, group: &Group) -> Vec<GroupMilestone> {
+    let mut milestones = Vec::new(env);
+
+    let total_cycles = group.members.len() as u32;
+    let completed_cycles = group.payout_index;
+
+    // First payout
+    if completed_cycles == 1 {
+        milestones.push_back(GroupMilestone::FirstPayout);
+    }
+
+    // Halfway complete
+    if total_cycles >= 2 && completed_cycles == total_cycles / 2 {
+        milestones.push_back(GroupMilestone::HalfwayComplete);
+    }
+
+    // Three quarters complete
+    if total_cycles >= 4 && completed_cycles == (total_cycles * 3) / 4 {
+        milestones.push_back(GroupMilestone::ThreeQuartersComplete);
+    }
+
+    // Fully completed
+    if group.is_complete {
+        milestones.push_back(GroupMilestone::FullyCompleted);
+
+        // Check for perfect attendance (all members on-time every cycle)
+        if check_perfect_attendance(env, group) {
+            milestones.push_back(GroupMilestone::PerfectAttendance);
+        }
+
+        // Check for zero penalties
+        if check_zero_penalties(env, group) {
+            milestones.push_back(GroupMilestone::ZeroPenalties);
+        }
+    }
+
+    milestones
+}
+
+/// Returns true if all members contributed on time every cycle (no late contributions).
+fn check_perfect_attendance(env: &Env, group: &Group) -> bool {
+    for member in group.members.iter() {
+        if let Some(penalty) = crate::storage::get_member_penalty(env, group.id, &member) {
+            if penalty.late_count > 0 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Returns true if no penalties were incurred across all cycles.
+fn check_zero_penalties(env: &Env, group: &Group) -> bool {
+    let total_cycles = group.members.len() as u32;
+    for cycle in 1..=total_cycles {
+        let pool = crate::storage::get_cycle_penalty_pool(env, group.id, cycle);
+        if pool > 0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Checks which member achievements have been newly earned.
+pub fn check_member_achievements(
+    env: &Env,
+    member: &Address,
+    stats: &crate::types::MemberStats,
+) -> Vec<MemberAchievement> {
+    let mut achievements = Vec::new(env);
+
+    // First contribution
+    if stats.total_contributions == 1 {
+        achievements.push_back(MemberAchievement::FirstContribution);
+    }
+
+    // Reliable (95%+ on-time rate)
+    if stats.total_contributions >= 5 {
+        let on_time_rate = (stats.on_time_contributions * 100) / stats.total_contributions;
+        if on_time_rate >= 95 {
+            achievements.push_back(MemberAchievement::Reliable);
+        }
+    }
+
+    // Veteran (5+ completed groups)
+    if stats.total_groups_completed >= 5 {
+        achievements.push_back(MemberAchievement::Veteran);
+    }
+
+    // High roller (1M+ XLM = 10^13 stroops contributed)
+    if stats.total_amount_contributed >= 10_000_000_000_000 {
+        achievements.push_back(MemberAchievement::HighRoller);
+    }
+
+    // Perfect attendance check (no late contributions ever)
+    if stats.total_contributions >= 10 && stats.late_contributions == 0 {
+        achievements.push_back(MemberAchievement::PerfectAttendance);
+    }
+
+    achievements
+}
+
+/// Initializes default MemberStats for a new member.
+pub fn default_member_stats(env: &Env, member: &Address) -> crate::types::MemberStats {
+    crate::types::MemberStats {
+        member: member.clone(),
+        total_groups_joined: 0,
+        total_groups_completed: 0,
+        total_contributions: 0,
+        on_time_contributions: 0,
+        late_contributions: 0,
+        total_amount_contributed: 0,
+        achievements: Vec::new(env),
+    }
 }
