@@ -3,8 +3,10 @@
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6
  */
 
-import request from 'supertest'
 import { createApp, generateToken, generateValidPublicKey } from '../../../tests/testHelpers'
+
+import request from 'supertest'
+import { totpService } from '../../services/totpService'
 
 jest.mock('../../services/sorobanService')
 
@@ -45,6 +47,88 @@ describe('Auth API — POST /api/auth/token', () => {
 
     // Assert
     expect(res.status).toBe(400)
+  })
+
+  it('returns a two-factor challenge when 2FA is enabled for the wallet', async () => {
+    const publicKey = generateValidPublicKey()
+    const adminToken = generateToken(publicKey)
+
+    const setupRes = await request(app)
+      .post('/api/auth/2fa/setup')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    const enableRes = await request(app)
+      .post('/api/auth/2fa/enable')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ totpCode: totpService.generateToken(setupRes.body.secret) })
+
+    expect(enableRes.status).toBe(200)
+
+    const res = await request(app).post('/api/auth/token').send({ publicKey })
+
+    expect(res.status).toBe(202)
+    expect(res.body.requiresTwoFactor).toBe(true)
+    expect(typeof res.body.pendingToken).toBe('string')
+  })
+
+  it('returns a JWT when a valid two-factor code is supplied for an enabled wallet', async () => {
+    const publicKey = generateValidPublicKey()
+    const adminToken = generateToken(publicKey)
+
+    const setupRes = await request(app)
+      .post('/api/auth/2fa/setup')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    await request(app)
+      .post('/api/auth/2fa/enable')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ totpCode: totpService.generateToken(setupRes.body.secret) })
+
+    const challengeRes = await request(app).post('/api/auth/token').send({ publicKey })
+    const loginRes = await request(app).post('/api/auth/token').send({
+      publicKey,
+      pendingToken: challengeRes.body.pendingToken,
+      totpCode: totpService.generateToken(setupRes.body.secret),
+    })
+
+    expect(loginRes.status).toBe(200)
+    expect(typeof loginRes.body.token).toBe('string')
+    expect(loginRes.body.twoFactorEnabled).toBe(true)
+  })
+})
+
+describe('Auth API — 2FA management', () => {
+  it('reports disabled 2FA status by default', async () => {
+    const publicKey = generateValidPublicKey()
+    const token = generateToken(publicKey)
+
+    const res = await request(app)
+      .get('/api/auth/2fa/status')
+      .set('Authorization', `Bearer ${token}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.enabled).toBe(false)
+  })
+
+  it('sets up and enables 2FA for an authenticated user', async () => {
+    const publicKey = generateValidPublicKey()
+    const token = generateToken(publicKey)
+
+    const setupRes = await request(app)
+      .post('/api/auth/2fa/setup')
+      .set('Authorization', `Bearer ${token}`)
+
+    expect(setupRes.status).toBe(200)
+    expect(typeof setupRes.body.secret).toBe('string')
+    expect(setupRes.body.otpAuthUrl).toContain('otpauth://totp/')
+
+    const enableRes = await request(app)
+      .post('/api/auth/2fa/enable')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ totpCode: totpService.generateToken(setupRes.body.secret) })
+
+    expect(enableRes.status).toBe(200)
+    expect(enableRes.body.enabled).toBe(true)
   })
 })
 

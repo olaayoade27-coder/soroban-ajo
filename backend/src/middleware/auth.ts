@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express'
+import { NextFunction, Request, Response } from 'express'
+
 import { AuthService } from '../services/authService'
 
 export interface AuthRequest extends Request {
@@ -17,6 +18,11 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
 
   try {
     const payload = AuthService.verifyToken(token)
+    if (payload.purpose && payload.purpose !== 'auth') {
+      res.status(401).json({ error: 'Invalid token scope' })
+      return
+    }
+
     req.user = {
       publicKey: payload.publicKey,
       walletAddress: payload.publicKey,

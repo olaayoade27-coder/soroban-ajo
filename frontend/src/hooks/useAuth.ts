@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useRef } from 'react'
-import { create } from 'zustand'
-import { authService, AuthError } from '../services/authService'
-import { analytics, trackUserAction } from '../services/analytics'
 import type {
-  AuthState,
   AuthActions,
   AuthSession,
+  AuthState,
   LoginParams,
   StellarNetwork,
   WalletProvider,
 } from '../types/auth'
+import { AuthError, authService } from '../services/authService'
+import { analytics, trackUserAction } from '../services/analytics'
+import { useCallback, useEffect, useRef } from 'react'
+
+import { create } from 'zustand'
 
 type AuthStore = AuthState & AuthActions
 
@@ -21,6 +22,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   network: 'testnet' as StellarNetwork,
   provider: null as WalletProvider | null,
   session: null as AuthSession | null,
+  pendingTwoFactor: null,
   error: null as string | null,
 
   // --- Actions ---
@@ -30,12 +32,35 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
     try {
       const walletResult = await authService.requestWalletSignature(provider)
+      const authResult = await authService.requestBackendToken({ publicKey: walletResult.address })
+
+      if ('requiresTwoFactor' in authResult) {
+        set({
+          isAuthenticated: false,
+          isLoading: false,
+          address: walletResult.address,
+          network: walletResult.network,
+          provider,
+          session: null,
+          pendingTwoFactor: {
+            address: walletResult.address,
+            provider,
+            network: walletResult.network,
+            rememberMe,
+            pendingToken: authResult.pendingToken,
+          },
+          error: null,
+        })
+        return
+      }
+
       const tokens = authService.generateTokenPair(rememberMe)
       const session = authService.createSession(
         walletResult,
-        tokens,
+        { ...tokens, token: authResult.token },
         rememberMe,
         provider,
+        authResult.twoFactorEnabled,
       )
 
       await authService.saveSession(session)
@@ -50,6 +75,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         network: session.network,
         provider: session.provider,
         session,
+        pendingTwoFactor: null,
         error: null,
       })
     } catch (err) {
@@ -70,11 +96,79 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         address: null,
         provider: null,
         session: null,
+        pendingTwoFactor: null,
         error: message,
       })
 
       throw err
     }
+  },
+
+  verifyTwoFactor: async (totpCode: string) => {
+    const pendingTwoFactor = get().pendingTwoFactor
+
+    if (!pendingTwoFactor) {
+      throw new AuthError('No two-factor authentication challenge is pending', 'NO_PENDING_TWO_FACTOR')
+    }
+
+    set({ isLoading: true, error: null })
+
+    try {
+      const authResult = await authService.requestBackendToken({
+        publicKey: pendingTwoFactor.address,
+        pendingToken: pendingTwoFactor.pendingToken,
+        totpCode,
+      })
+
+      if ('requiresTwoFactor' in authResult) {
+        throw new AuthError('Two-factor verification is still required', 'TWO_FACTOR_REQUIRED')
+      }
+
+      const tokens = authService.generateTokenPair(pendingTwoFactor.rememberMe)
+      const session = authService.createSession(
+        {
+          address: pendingTwoFactor.address,
+          signature: pendingTwoFactor.pendingToken,
+          network: pendingTwoFactor.network,
+        },
+        { ...tokens, token: authResult.token },
+        pendingTwoFactor.rememberMe,
+        pendingTwoFactor.provider,
+        authResult.twoFactorEnabled,
+      )
+
+      await authService.saveSession(session)
+
+      analytics.setUserId(session.address)
+      trackUserAction.walletConnected(session.provider)
+
+      set({
+        isAuthenticated: true,
+        isLoading: false,
+        address: session.address,
+        network: session.network,
+        provider: session.provider,
+        session,
+        pendingTwoFactor: null,
+        error: null,
+      })
+    } catch (err) {
+      const message = err instanceof AuthError ? err.message : 'Failed to verify two-factor authentication.'
+      set({ isLoading: false, error: message })
+      throw err
+    }
+  },
+
+  cancelTwoFactor: () => {
+    set({
+      isAuthenticated: false,
+      isLoading: false,
+      address: null,
+      provider: null,
+      session: null,
+      pendingTwoFactor: null,
+      error: null,
+    })
   },
 
   logout: async () => {
@@ -92,6 +186,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       address: null,
       provider: null,
       session: null,
+      pendingTwoFactor: null,
       error: null,
     })
   },
@@ -111,6 +206,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       address: null,
       provider: null,
       session: null,
+      pendingTwoFactor: null,
       error: null,
     })
   },
@@ -165,6 +261,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           network: session.network,
           provider: session.provider,
           session,
+          pendingTwoFactor: null,
           error: null,
         })
       } else {
@@ -174,6 +271,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           address: null,
           provider: null,
           session: null,
+          pendingTwoFactor: null,
         })
       }
     } catch {
@@ -183,6 +281,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         address: null,
         provider: null,
         session: null,
+        pendingTwoFactor: null,
       })
     }
   },
@@ -237,8 +336,11 @@ export function useAuth() {
     network: store.network,
     provider: store.provider,
     session: store.session,
+    pendingTwoFactor: store.pendingTwoFactor,
     error: store.error,
     login: store.login,
+    verifyTwoFactor: store.verifyTwoFactor,
+    cancelTwoFactor: store.cancelTwoFactor,
     logout: store.logout,
     logoutAllDevices: store.logoutAllDevices,
     refreshSession: store.refreshSession,

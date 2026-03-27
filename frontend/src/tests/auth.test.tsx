@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import React from 'react'
 import { AuthProvider, useAuthContext } from '../context/AuthContext'
-import { ProtectedRoute } from '../components/ProtectedRoute'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
 import { Login } from '../pages/Login'
-import { useAuthStore } from '../hooks/useAuth'
+import { ProtectedRoute } from '../components/ProtectedRoute'
+import React from 'react'
 import { authService } from '../services/authService'
+import { useAuthStore } from '../hooks/useAuth'
 
 // Mock authService to avoid real crypto/wallet calls
 vi.mock('../services/authService', () => {
@@ -38,6 +39,13 @@ vi.mock('../services/authService', () => {
         rememberMe,
       })),
       saveSession: vi.fn().mockResolvedValue(undefined),
+      requestBackendToken: vi
+        .fn()
+        .mockResolvedValue({ token: 'backend-jwt', twoFactorEnabled: false }),
+      getTwoFactorStatus: vi.fn(),
+      setupTwoFactor: vi.fn(),
+      enableTwoFactor: vi.fn(),
+      disableTwoFactor: vi.fn(),
       loadSession: vi.fn().mockResolvedValue(null),
       refreshSession: vi.fn(),
       clearStoredSession: vi.fn(),
@@ -78,6 +86,7 @@ function resetAuthStore() {
     network: 'testnet',
     provider: null,
     session: null,
+    pendingTwoFactor: null,
     error: null,
   })
 }
@@ -121,7 +130,7 @@ describe('AuthContext & useAuthContext', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     expect(() => render(<AuthStateDisplay />)).toThrow(
-      'useAuthContext must be used within an AuthProvider',
+      'useAuthContext must be used within an AuthProvider'
     )
 
     spy.mockRestore()
@@ -145,6 +154,7 @@ describe('AuthContext & useAuthContext', () => {
       token: 'restored-token',
       refreshToken: 'restored-refresh',
       rememberMe: true,
+      pendingTwoFactor: null,
     }
 
     vi.mocked(authService.loadSession).mockResolvedValueOnce(mockSession)
@@ -165,7 +175,7 @@ describe('ProtectedRoute', () => {
     renderWithAuth(
       <ProtectedRoute>
         <div>Protected Content</div>
-      </ProtectedRoute>,
+      </ProtectedRoute>
     )
 
     expect(screen.getByText('Checking authentication…')).toBeInTheDocument()
@@ -178,7 +188,7 @@ describe('ProtectedRoute', () => {
     renderWithAuth(
       <ProtectedRoute>
         <div>Protected Content</div>
-      </ProtectedRoute>,
+      </ProtectedRoute>
     )
 
     expect(screen.getByText('Authentication Required')).toBeInTheDocument()
@@ -191,7 +201,7 @@ describe('ProtectedRoute', () => {
     renderWithAuth(
       <ProtectedRoute>
         <div>Protected Content</div>
-      </ProtectedRoute>,
+      </ProtectedRoute>
     )
 
     expect(screen.getByText('Protected Content')).toBeInTheDocument()
@@ -203,7 +213,7 @@ describe('ProtectedRoute', () => {
     renderWithAuth(
       <ProtectedRoute loadingFallback={<div>Custom Loading…</div>}>
         <div>Content</div>
-      </ProtectedRoute>,
+      </ProtectedRoute>
     )
 
     expect(screen.getByText('Custom Loading…')).toBeInTheDocument()
@@ -215,7 +225,7 @@ describe('ProtectedRoute', () => {
     renderWithAuth(
       <ProtectedRoute unauthenticatedFallback={<div>Please log in</div>}>
         <div>Content</div>
-      </ProtectedRoute>,
+      </ProtectedRoute>
     )
 
     expect(screen.getByText('Please log in')).toBeInTheDocument()
@@ -293,9 +303,7 @@ describe('Login page', () => {
 
     renderWithAuth(<Login />)
 
-    expect(
-      screen.getByText(/Your private keys never leave your wallet/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Your private keys never leave your wallet/)).toBeInTheDocument()
   })
 })
 
@@ -308,6 +316,7 @@ describe('useAuthStore', () => {
     expect(state.network).toBe('testnet')
     expect(state.provider).toBeNull()
     expect(state.session).toBeNull()
+    expect(state.pendingTwoFactor).toBeNull()
     expect(state.error).toBeNull()
   })
 
@@ -343,6 +352,52 @@ describe('useAuthStore', () => {
     expect(state.session).toBeNull()
     expect(authService.clearStoredSession).toHaveBeenCalled()
     expect(authService.stopSessionMonitoring).toHaveBeenCalled()
+  })
+
+  it('login stores a pending two-factor challenge when required', async () => {
+    const mockAddress = 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV'
+
+    vi.mocked(authService.requestWalletSignature).mockResolvedValueOnce({
+      address: mockAddress,
+      signature: 'sig',
+      network: 'testnet',
+    })
+
+    vi.mocked(authService.requestBackendToken).mockResolvedValueOnce({
+      requiresTwoFactor: true,
+      pendingToken: 'pending-2fa-token',
+    })
+
+    await useAuthStore.getState().login({ provider: 'freighter', rememberMe: true })
+
+    const state = useAuthStore.getState()
+    expect(state.isAuthenticated).toBe(false)
+    expect(state.pendingTwoFactor?.pendingToken).toBe('pending-2fa-token')
+    expect(state.pendingTwoFactor?.rememberMe).toBe(true)
+  })
+
+  it('verifyTwoFactor completes authentication after a pending challenge', async () => {
+    useAuthStore.setState({
+      pendingTwoFactor: {
+        address: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV',
+        provider: 'freighter',
+        network: 'testnet',
+        rememberMe: false,
+        pendingToken: 'pending-2fa-token',
+      },
+    })
+
+    vi.mocked(authService.requestBackendToken).mockResolvedValueOnce({
+      token: 'backend-jwt-2fa',
+      twoFactorEnabled: true,
+    })
+
+    await useAuthStore.getState().verifyTwoFactor('123456')
+
+    const state = useAuthStore.getState()
+    expect(state.isAuthenticated).toBe(true)
+    expect(state.pendingTwoFactor).toBeNull()
+    expect(state.session?.token).toBe('backend-jwt-2fa')
   })
 
   it('logoutAllDevices clears state and calls service', async () => {
@@ -439,12 +494,10 @@ describe('useAuthStore', () => {
   it('login sets error state on failure', async () => {
     const { AuthError } = await import('../services/authService')
     vi.mocked(authService.requestWalletSignature).mockRejectedValueOnce(
-      new AuthError('Wallet not found', 'WALLET_NOT_FOUND'),
+      new AuthError('Wallet not found', 'WALLET_NOT_FOUND')
     )
 
-    await expect(
-      useAuthStore.getState().login({ provider: 'freighter' }),
-    ).rejects.toThrow()
+    await expect(useAuthStore.getState().login({ provider: 'freighter' })).rejects.toThrow()
 
     const state = useAuthStore.getState()
     expect(state.isAuthenticated).toBe(false)

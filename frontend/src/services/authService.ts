@@ -1,22 +1,26 @@
 import type {
   AuthSession,
-  StoredSession,
+  AuthTokenResponse,
   SessionConfig,
-  TokenPair,
   StellarNetwork,
+  StoredSession,
+  TokenPair,
+  TwoFactorRequiredResponse,
+  TwoFactorSetupResponse,
+  TwoFactorStatusResponse,
   WalletProvider,
   WalletSignatureResult,
 } from '../types/auth'
-import {
-  ensureFreighterAllowed,
-  getStellarNetworkFromFreighter,
-  waitForFreighterApi,
-} from '@/utils/freighter'
 import {
   connectLobstrVault,
   isMobileDevice,
   isValidStellarAddress as validateLobstrAddress,
 } from '@/utils/lobstr'
+import {
+  ensureFreighterAllowed,
+  getStellarNetworkFromFreighter,
+  waitForFreighterApi,
+} from '@/utils/freighter'
 
 const DEFAULT_CONFIG: SessionConfig = {
   sessionDuration: 30 * 60 * 1000,
@@ -25,6 +29,9 @@ const DEFAULT_CONFIG: SessionConfig = {
   checkInterval: 60 * 1000,
   storagePrefix: 'ajo_auth',
 }
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+
+type AuthTokenResult = AuthTokenResponse | TwoFactorRequiredResponse
 
 /**
  * Generates a cryptographically random string for use as tokens.
@@ -163,6 +170,23 @@ class AuthService {
     return `${this.config.storagePrefix}_${suffix}`
   }
 
+  private buildApiUrl(path: string): string {
+    return `${API_URL}${path}`
+  }
+
+  private async parseJsonResponse<T>(response: Response): Promise<T> {
+    const payload = (await response.json().catch(() => null)) as T | { error?: string } | null
+
+    if (!response.ok) {
+      const errorMessage = payload && typeof payload === 'object' && 'error' in payload && payload.error
+        ? payload.error
+        : 'Authentication request failed'
+      throw new AuthError(errorMessage, 'AUTH_API_ERROR')
+    }
+
+    return payload as T
+  }
+
   /**
    * Requests a wallet signature to prove address ownership.
    * Currently supports Freighter; other providers can be added.
@@ -288,6 +312,7 @@ class AuthService {
     tokens: TokenPair,
     rememberMe: boolean,
     provider: WalletProvider,
+    twoFactorEnabled = false,
   ): AuthSession {
     return {
       address: walletResult.address,
@@ -298,7 +323,71 @@ class AuthService {
       token: tokens.token,
       refreshToken: tokens.refreshToken,
       rememberMe,
+      twoFactorEnabled,
     }
+  }
+
+  async requestBackendToken(params: {
+    publicKey: string
+    pendingToken?: string
+    totpCode?: string
+  }): Promise<AuthTokenResult> {
+    const response = await fetch(this.buildApiUrl('/api/auth/token'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    })
+
+    if (response.status === 202) {
+      return (await response.json()) as TwoFactorRequiredResponse
+    }
+
+    return this.parseJsonResponse<AuthTokenResponse>(response)
+  }
+
+  async getTwoFactorStatus(token: string): Promise<TwoFactorStatusResponse> {
+    const response = await fetch(this.buildApiUrl('/api/auth/2fa/status'), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    return this.parseJsonResponse<TwoFactorStatusResponse>(response)
+  }
+
+  async setupTwoFactor(token: string): Promise<TwoFactorSetupResponse> {
+    const response = await fetch(this.buildApiUrl('/api/auth/2fa/setup'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    return this.parseJsonResponse<TwoFactorSetupResponse>(response)
+  }
+
+  async enableTwoFactor(token: string, totpCode: string): Promise<{ success: boolean; enabled: boolean }> {
+    const response = await fetch(this.buildApiUrl('/api/auth/2fa/enable'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ totpCode }),
+    })
+
+    return this.parseJsonResponse<{ success: boolean; enabled: boolean }>(response)
+  }
+
+  async disableTwoFactor(token: string, totpCode: string): Promise<{ success: boolean; enabled: boolean }> {
+    const response = await fetch(this.buildApiUrl('/api/auth/2fa/disable'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ totpCode }),
+    })
+
+    return this.parseJsonResponse<{ success: boolean; enabled: boolean }>(response)
   }
 
   /** Encrypts and persists a session to localStorage */
@@ -321,6 +410,7 @@ class AuthService {
     localStorage.setItem(this.storageKey('address'), session.address)
     localStorage.setItem(this.storageKey('token_hint'), session.token.slice(0, 8))
     localStorage.setItem(this.storageKey('storage_type'), session.rememberMe ? 'local' : 'session')
+    localStorage.setItem('token', session.token)
 
     // Track active devices
     this.registerDevice(session.address, getDeviceId())
@@ -411,6 +501,7 @@ class AuthService {
       localStorage.removeItem(this.storageKey(key))
       sessionStorage.removeItem(this.storageKey(key))
     }
+    localStorage.removeItem('token')
   }
 
   /** Registers a device ID against an address for multi-device tracking */
