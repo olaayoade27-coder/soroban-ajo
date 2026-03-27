@@ -8,6 +8,7 @@ import {
   Users,
   FolderKanban,
   ArrowLeftRight,
+  ChartColumnBig,
   Shield,
   Settings,
   FileBarChart,
@@ -16,7 +17,6 @@ import {
   LogOut,
   ChevronLeft,
   Menu,
-  AlertTriangle,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { href: '/admin/users', label: 'Users', icon: Users, permission: 'users:read' },
   { href: '/admin/groups', label: 'Groups', icon: FolderKanban, permission: 'groups:read' },
   { href: '/admin/transactions', label: 'Transactions', icon: ArrowLeftRight, permission: 'transactions:read' },
+  { href: '/admin/analytics', label: 'Analytics', icon: ChartColumnBig, permission: 'reports:read' },
   { href: '/admin/moderation', label: 'Moderation', icon: Shield, permission: 'moderation:read' },
   { href: '/admin/reports', label: 'Reports', icon: FileBarChart, permission: 'reports:read' },
   { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList, permission: 'audit:read' },
