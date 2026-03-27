@@ -19,6 +19,7 @@ import { createDdosProtector } from './middleware/ddosProtector'
 import { kycRouter } from './routes/kyc'
 import { disputesRouter } from './routes/disputes'
 import rewardsRouter from './routes/rewards'
+import { exportsRouter } from './routes/exports'
 
 dotenv.config()
 
@@ -57,6 +58,7 @@ app.use('/api/goals', createUserLimiter(), goalsRouter)
 app.use('/api/kyc', kycRouter)
 app.use('/api/disputes', disputesRouter)
 app.use('/api/rewards', rewardsRouter)
+app.use('/api/exports', createUserLimiter(), exportsRouter)
 
 // 404 handler
 app.use((req, res) => {
