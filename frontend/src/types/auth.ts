@@ -22,6 +22,16 @@ export interface AuthSession {
   refreshToken: string
   /** Whether the user opted for persistent login */
   rememberMe: boolean
+  /** Whether backend 2FA is enabled for this account */
+  twoFactorEnabled?: boolean
+}
+
+export interface TwoFactorChallenge {
+  address: string
+  provider: WalletProvider
+  network: StellarNetwork
+  rememberMe: boolean
+  pendingToken: string
 }
 
 /** Stored session data shape (encrypted payload in storage) */
@@ -44,12 +54,15 @@ export interface AuthState {
   network: StellarNetwork
   provider: WalletProvider | null
   session: AuthSession | null
+  pendingTwoFactor: TwoFactorChallenge | null
   error: string | null
 }
 
 /** Actions available on the auth store */
 export interface AuthActions {
   login: (params: LoginParams) => Promise<void>
+  verifyTwoFactor: (totpCode: string) => Promise<void>
+  cancelTwoFactor: () => void
   logout: () => Promise<void>
   logoutAllDevices: () => Promise<void>
   refreshSession: () => Promise<boolean>
@@ -91,4 +104,25 @@ export interface TokenPair {
   token: string
   refreshToken: string
   expiresAt: string
+}
+
+export interface AuthTokenResponse {
+  token: string
+  twoFactorEnabled: boolean
+}
+
+export interface TwoFactorRequiredResponse {
+  requiresTwoFactor: true
+  pendingToken: string
+}
+
+export interface TwoFactorStatusResponse {
+  enabled: boolean
+  enabledAt: string | null
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string
+  manualEntryKey: string
+  otpAuthUrl: string
 }
