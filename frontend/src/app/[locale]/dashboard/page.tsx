@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { GamificationDashboard } from '@/components/GamificationDashboard'
 import { GroupCard } from '@/components/GroupCard'
 import { useAuthContext } from '@/context/AuthContext'
 
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
-  const { isAuthenticated } = useAuthContext()
+  const { isAuthenticated, address } = useAuthContext()
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -32,6 +33,10 @@ export default function DashboardPage() {
 
       {isAuthenticated ? (
         <>
+          <div className="mb-8">
+            <GamificationDashboard walletAddress={address || undefined} />
+          </div>
+
           {/* Stat Cards Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow p-6">

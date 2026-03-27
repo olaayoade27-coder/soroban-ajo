@@ -1,246 +1,104 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { LeaderboardEntry, LEVEL_CONFIGS, UserLevel } from '@/types/gamification';
+import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import type { LeaderboardEntry as LeaderboardRow } from '@/hooks/useGamification'
 
 interface LeaderboardProps {
-  limit?: number;
-  currentUserAddress?: string;
-}
-
-export default function Leaderboard({ limit = 100, currentUserAddress }: LeaderboardProps) {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'week' | 'month'>('all');
-
-  useEffect(() => {
-    fetchLeaderboard();
-  }, [limit]);
-
-  const fetchLeaderboard = async () => {
-    try {
-      const response = await fetch(`/api/achievements/leaderboard?limit=${limit}`);
-      const data = await response.json();
-      if (data.success) {
-        setLeaderboard(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch leaderboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    );
+  boards: {
+    global: LeaderboardRow[]
+    group: LeaderboardRow[]
+    friends: LeaderboardRow[]
   }
+}
+
+type LeaderboardScope = 'global' | 'group' | 'friends'
+
+const scopeLabels: Record<LeaderboardScope, string> = {
+  global: 'Global',
+  group: 'Group',
+  friends: 'Friends',
+}
+
+export default function Leaderboard({ boards }: LeaderboardProps) {
+  const [scope, setScope] = useState<LeaderboardScope>('global')
+  const rows = boards[scope]
 
   return (
-    <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Leaderboard</h2>
-            <p className="text-gray-600 mt-1">Top savers in the community</p>
-          </div>
-          <div className="text-4xl">🏆</div>
+    <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-6 shadow-sm backdrop-blur">
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-500">
+            Leaderboards
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-slate-900">See how you stack up</h3>
         </div>
-
-        {/* Filters */}
-        <div className="flex space-x-2 mt-4">
-          <FilterButton
-            active={filter === 'all'}
-            onClick={() => setFilter('all')}
-            label="All Time"
-          />
-          <FilterButton
-            active={filter === 'week'}
-            onClick={() => setFilter('week')}
-            label="This Week"
-          />
-          <FilterButton
-            active={filter === 'month'}
-            onClick={() => setFilter('month')}
-            label="This Month"
-          />
+        <div className="inline-flex rounded-2xl bg-slate-100 p-1">
+          {Object.keys(scopeLabels).map((value) => {
+            const typedValue = value as LeaderboardScope
+            const active = typedValue === scope
+            return (
+              <button
+                key={typedValue}
+                onClick={() => setScope(typedValue)}
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold transition-colors ${
+                  active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                {scopeLabels[typedValue]}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Top 3 */}
-      {leaderboard.length >= 3 && (
-        <div className="p-6 bg-gradient-to-b from-yellow-50 to-white">
-          <div className="grid grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {/* 2nd Place */}
-            <div className="flex flex-col items-center pt-8">
-              <div className="text-4xl mb-2">🥈</div>
-              <LeaderCard entry={leaderboard[1]} rank={2} isCurrentUser={leaderboard[1].user.walletAddress === currentUserAddress} />
-            </div>
-
-            {/* 1st Place */}
-            <div className="flex flex-col items-center">
-              <div className="text-5xl mb-2">🥇</div>
-              <LeaderCard entry={leaderboard[0]} rank={1} isCurrentUser={leaderboard[0].user.walletAddress === currentUserAddress} />
-            </div>
-
-            {/* 3rd Place */}
-            <div className="flex flex-col items-center pt-12">
-              <div className="text-3xl mb-2">🥉</div>
-              <LeaderCard entry={leaderboard[2]} rank={3} isCurrentUser={leaderboard[2].user.walletAddress === currentUserAddress} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Rest of Leaderboard */}
-      <div className="divide-y divide-gray-200">
-        {leaderboard.slice(3).map((entry, index) => (
-          <LeaderboardRow
-            key={entry.id}
-            entry={entry}
-            rank={index + 4}
-            isCurrentUser={entry.user.walletAddress === currentUserAddress}
-          />
-        ))}
-      </div>
-
-      {leaderboard.length === 0 && (
-        <div className="p-12 text-center text-gray-500">
-          <p>No leaderboard data available yet</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FilterButton({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-        active
-          ? 'bg-primary-600 text-white'
-          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function LeaderCard({
-  entry,
-  rank,
-  isCurrentUser,
-}: {
-  entry: LeaderboardEntry;
-  rank: number;
-  isCurrentUser: boolean;
-}) {
-  const levelConfig = LEVEL_CONFIGS[entry.level as UserLevel];
-
-  return (
-    <div
-      className={`bg-white rounded-lg shadow-lg p-4 w-full ${
-        isCurrentUser ? 'ring-2 ring-primary-600' : ''
-      }`}
-    >
-      <div className="text-center">
-        <div className="text-2xl mb-2">{levelConfig.icon}</div>
-        <p className="font-semibold text-gray-900 truncate">
-          {formatAddress(entry.user.walletAddress)}
-        </p>
-        <p className={`text-sm font-medium ${levelConfig.color}`}>{entry.level}</p>
-        <p className="text-2xl font-bold text-primary-600 mt-2">
-          {entry.points.toLocaleString()}
-        </p>
-        <p className="text-xs text-gray-500">points</p>
-        {entry.contributionStreak > 0 && (
-          <div className="mt-2 inline-flex items-center text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">
-            🔥 {entry.contributionStreak} day streak
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LeaderboardRow({
-  entry,
-  rank,
-  isCurrentUser,
-}: {
-  entry: LeaderboardEntry;
-  rank: number;
-  isCurrentUser: boolean;
-}) {
-  const levelConfig = LEVEL_CONFIGS[entry.level as UserLevel];
-
-  return (
-    <div
-      className={`p-4 hover:bg-gray-50 transition-colors ${
-        isCurrentUser ? 'bg-primary-50' : ''
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4 flex-1">
-          {/* Rank */}
-          <div className="w-12 text-center">
-            <span className="text-lg font-bold text-gray-600">#{rank}</span>
-          </div>
-
-          {/* User Info */}
-          <div className="flex items-center space-x-3 flex-1">
-            <div className="text-2xl">{levelConfig.icon}</div>
-            <div>
-              <p className="font-semibold text-gray-900">
-                {formatAddress(entry.user.walletAddress)}
-                {isCurrentUser && (
-                  <span className="ml-2 text-xs font-medium text-primary-600 bg-primary-100 px-2 py-1 rounded">
-                    You
-                  </span>
-                )}
-              </p>
-              <p className={`text-sm ${levelConfig.color}`}>{entry.level}</p>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="hidden md:flex items-center space-x-6">
-            {entry.contributionStreak > 0 && (
-              <div className="text-center">
-                <p className="text-sm text-gray-500">Streak</p>
-                <p className="font-semibold text-orange-600">🔥 {entry.contributionStreak}</p>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={scope}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.22 }}
+          className="space-y-3"
+        >
+          {rows.map((entry) => (
+            <div
+              key={entry.id}
+              className={`flex items-center gap-3 rounded-2xl border p-4 ${
+                entry.isCurrentUser
+                  ? 'border-sky-200 bg-sky-50'
+                  : 'border-slate-200 bg-slate-50/70'
+              }`}
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
+                #{entry.position}
               </div>
-            )}
-          </div>
-
-          {/* Points */}
-          <div className="text-right">
-            <p className="text-2xl font-bold text-primary-600">
-              {entry.points.toLocaleString()}
-            </p>
-            <p className="text-xs text-gray-500">points</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function formatAddress(address: string): string {
-  if (address.length <= 12) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate font-semibold text-slate-900">{entry.name}</p>
+                  {entry.isCurrentUser && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">
+                      You
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-500">Level {entry.level}</p>
+              </div>
+              <div className="text-right">
+                <div className="font-bold text-slate-900">{entry.xp.toLocaleString()} XP</div>
+                <div
+                  className={`text-xs font-semibold ${
+                    entry.change >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                  }`}
+                >
+                  {entry.change >= 0 ? '+' : ''}
+                  {entry.change} positions
+                </div>
+              </div>
+            </div>
+          ))}
+        </motion.div>
+      </AnimatePresence>
+    </section>
+  )
 }

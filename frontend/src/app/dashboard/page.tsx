@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useStaggeredAnimation } from '@/hooks/useStaggeredAnimation'
 import { BentoGrid, BentoCell } from '@/components/BentoGrid'
+import { GamificationDashboard } from '@/components/GamificationDashboard'
 import { MetricCard } from '@/components/dashboard/MetricCard'
 import { GroupsGrid } from '@/components/GroupsGrid'
 import { GroupsList } from '@/components/GroupsList'
@@ -196,6 +197,10 @@ export default function DashboardPage() {
             </div>
           </BentoCell>
         </BentoGrid>
+
+        <div className="animate-fade-in-up" style={{ animationDelay: '420ms', animationFillMode: 'both' }}>
+          <GamificationDashboard walletAddress={address || undefined} />
+        </div>
 
         {/* ── Groups section ── */}
         <div className="animate-fade-in-up" style={{ animationDelay: '480ms', animationFillMode: 'both' }}>
