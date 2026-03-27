@@ -115,4 +115,16 @@ pub enum AjoError {
 
     /// Cannot request refund before cycle deadline.
     CycleNotExpired = 37,
+
+    /// Dispute not found in storage
+    DisputeNotFound = 38,
+    /// Dispute has already been resolved or rejected
+    DisputeAlreadyResolved = 39,
+    /// Member has already voted on this dispute
+    AlreadyVotedOnDispute = 40,
+    /// Dispute voting period has ended
+    VotingPeriodEndedDispute = 41,
+    /// Voter is not involved in the dispute (not complainant or defendant)
+    NotDisputeMember = 42,
 }
+

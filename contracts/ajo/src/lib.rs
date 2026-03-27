@@ -24,4 +24,15 @@ mod utils;
 pub use contract::AjoContract;
 pub use contract::AjoContractClient;
 pub use errors::AjoError;
-pub use types::{GroupState, RefundReason, RefundRequest, RefundRecord, RefundVote};
+pub use types::{
+    Dispute,
+    DisputeResolution,
+    DisputeStatus,
+    DisputeType,
+    DisputeVote,
+    GroupState, 
+    RefundReason, 
+    RefundRequest, 
+    RefundRecord, 
+    RefundVote
+};

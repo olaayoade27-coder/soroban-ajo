@@ -4,7 +4,22 @@ use crate::errors::AjoError;
 use crate::events;
 use crate::pausable;
 use crate::storage;
-use crate::types::{Group, GroupMetadata, GroupStatus};
+use crate::errors::AjoError;
+use crate::events;
+use crate::pausable;
+use crate::storage;
+use crate::types::{
+    Dispute,
+    DisputeResolution,
+    DisputeStatus,
+    DisputeType,
+    DisputeVote,
+    Group, 
+    GroupMetadata, 
+    GroupStatus,
+    RefundReason,
+};
+use crate::utils;
 use crate::utils;
 
 /// The main Ajo contract
@@ -1216,11 +1231,322 @@ impl AjoContract {
     ///
     /// # Errors
     /// * `GroupNotFound` - If no refund record exists
-    pub fn get_refund_record(
+pub fn get_refund_record(
         env: Env,
         group_id: u64,
         member: Address,
     ) -> Result<crate::types::RefundRecord, AjoError> {
         storage::get_refund_record(&env, group_id, &member).ok_or(AjoError::GroupNotFound)
+    }
+
+    /// File a dispute against another group member.
+    ///
+    /// Any member can file a dispute against another member. Both parties must be members
+    /// of the same group. Disputes enter `Open` status and move to `Voting` after votes.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `complainant` - Filing member (requires auth)
+    /// * `group_id` - The group where dispute occurs
+    /// * `defendant` - Accused member
+    /// * `dispute_type` - Type of dispute
+    /// * `description` - Description of issue
+    /// * `evidence_hash` - IPFS/multihash of evidence
+    /// * `proposed_resolution` - Suggested resolution
+    ///
+    /// # Returns
+    /// The created dispute ID
+    ///
+    /// # Errors
+    /// * `GroupNotFound`
+    /// * `NotMember` for complainant or defendant
+    pub fn file_dispute(
+        env: Env,
+        complainant: Address,
+        group_id: u64,
+        defendant: Address,
+        dispute_type: DisputeType,
+        description: soroban_sdk::String,
+        evidence_hash: BytesN<32>,
+        proposed_resolution: DisputeResolution,
+    ) -> Result<u64, AjoError> {
+        pausable::ensure_not_paused(&env)?;
+        complainant.require_auth();
+
+        let group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Verify complainant is member
+        if !utils::is_member(&group.members, &complainant) {
+            return Err(AjoError::NotMember);
+        }
+        // Verify defendant is member
+        if !utils::is_member(&group.members, &defendant) {
+            return Err(AjoError::NotMember);
+        }
+
+        let dispute_id = storage::get_next_dispute_id(&env);
+        let now = utils::get_current_timestamp(&env);
+        let voting_deadline = now + crate::types::DISPUTE_VOTING_PERIOD; // 7 days
+
+        let dispute = Dispute {
+            id: dispute_id,
+            group_id,
+            dispute_type,
+            complainant: complainant.clone(),
+            defendant: complainant.clone(),
+            description,
+            evidence_hash,
+            status: DisputeStatus::Open,
+            created_at: now,
+            voting_deadline,
+            votes_for_action: 0,
+            votes_against_action: 0,
+            proposed_resolution,
+            final_resolution: None,
+        };
+
+        storage::store_dispute(&env, dispute_id, &dispute);
+        storage::store_group_dispute_id(&env, group_id, dispute_id);
+        events::emit_dispute_filed(&env, dispute_id, group_id, &complainant, &defendant);
+
+        Ok(dispute_id)
+    }
+
+    /// Vote on an open dispute.
+    ///
+    /// Group members can vote to support or oppose the proposed resolution. Voting
+    /// is open for 7 days. Each member votes once.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `voter` - Voting member (requires auth)
+    /// * `dispute_id` - The dispute to vote on
+    /// * `supports_action` - true to support resolution, false oppose
+    ///
+    /// # Errors
+    /// * `DisputeNotFound`
+    /// * `NotMember`
+    /// * `AlreadyVotedOnDispute`
+    /// * `VotingPeriodEndedDispute`
+    pub fn vote_on_dispute(
+        env: Env,
+        voter: Address,
+        dispute_id: u64,
+        supports_action: bool,
+    ) -> Result<(), AjoError> {
+        pausable::ensure_not_paused(&env)?;
+        voter.require_auth();
+
+        let mut dispute = storage::get_dispute(&env, dispute_id).ok_or(AjoError::DisputeNotFound)?;
+        let group = storage::get_group(&env, dispute.group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Verify voter is group member
+        if !utils::is_member(&group.members, &voter) {
+            return Err(AjoError::NotMember);
+        }
+
+        // Check if already voted
+        if storage::has_voted_on_dispute(&env, dispute_id, &voter) {
+            return Err(AjoError::AlreadyVotedOnDispute);
+        }
+
+        // Check voting not started or deadline
+        let now = utils::get_current_timestamp(&env);
+        if dispute.status != DisputeStatus::Open && dispute.status != DisputeStatus::Voting {
+            return Err(AjoError::DisputeAlreadyResolved);
+        }
+        if now > dispute.voting_deadline {
+            return Err(AjoError::VotingPeriodEndedDispute);
+        }
+
+        // Record vote
+        let vote = DisputeVote {
+            dispute_id,
+            voter: voter.clone(),
+            supports_action,
+            timestamp: now,
+        };
+        storage::store_dispute_vote(&env, dispute_id, &voter, &vote);
+
+        // Update counts
+        if supports_action {
+            dispute.votes_for_action += 1;
+        } else {
+            dispute.votes_against_action += 1;
+        }
+        dispute.status = DisputeStatus::Voting;
+        storage::store_dispute(&env, dispute_id, &dispute);
+
+        events::emit_dispute_vote(&env, dispute_id, &voter, supports_action);
+
+        Ok(())
+    }
+
+    /// Resolve a dispute after voting period ends.
+    ///
+    /// Calculates vote outcome (66% supermajority required for action). Executes
+    /// the proposed resolution if approved, updates status to Resolved/Rejected.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment
+    /// * `executor` - Group member executing resolution (requires auth)
+    /// * `dispute_id` - The dispute to resolve
+    ///
+    /// # Errors
+    /// * `DisputeNotFound`
+    /// * `VotingPeriodActive`
+    /// * Various resolution errors
+    pub fn resolve_dispute(
+        env: Env,
+        executor: Address,
+        dispute_id: u64,
+    ) -> Result<(), AjoError> {
+        pausable::ensure_not_paused(&env)?;
+        executor.require_auth();
+
+        let mut dispute = storage::get_dispute(&env, dispute_id).ok_or(AjoError::DisputeNotFound)?;
+        let group = storage::get_group(&env, dispute.group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Check voting period ended
+        let now = utils::get_current_timestamp(&env);
+        if now <= dispute.voting_deadline {
+            return Err(AjoError::VotingPeriodActive);
+        }
+
+        // Calculate approval (66% supermajority)
+        let total_votes = dispute.votes_for_action + dispute.votes_against_action;
+        let approval_percentage = if total_votes > 0 {
+            ((dispute.votes_for_action as u64 * 100) / total_votes as u64) as u32
+        } else {
+            0
+        };
+
+        let resolution_executed = if approval_percentage >= crate::types::DISPUTE_APPROVAL_THRESHOLD {
+            // Execute proposed resolution
+            match dispute.proposed_resolution {
+                DisputeResolution::Penalty => {
+                    Self::apply_dispute_penalty(&env, &dispute, &group)?
+                }
+                DisputeResolution::Removal => {
+                    Self::remove_member_from_group(&env, &dispute.defendant, dispute.group_id)?
+                }
+                DisputeResolution::Refund => {
+                    Self::process_dispute_refund(&env, &dispute)?
+                }
+                DisputeResolution::GroupCancellation => {
+                    Self::cancel_group(env.clone(), executor.clone(), dispute.group_id)?
+                }
+                _ => Ok(false), // NoAction/Warning - no execution needed
+            }?;
+            true
+        } else {
+            false
+        };
+
+        // Update status
+        if resolution_executed || dispute.proposed_resolution == DisputeResolution::NoAction || dispute.proposed_resolution == DisputeResolution::Warning {
+            dispute.final_resolution = Some(dispute.proposed_resolution);
+            dispute.status = DisputeStatus::Resolved;
+        } else {
+            dispute.final_resolution = Some(DisputeResolution::NoAction);
+            dispute.status = DisputeStatus::Rejected;
+        }
+        storage::store_dispute(&env, dispute_id, &dispute);
+
+        events::emit_dispute_resolved(&env, dispute_id, dispute.final_resolution.unwrap());
+
+        Ok(())
+    }
+
+    /// Get single dispute details.
+    pub fn get_dispute(
+        env: Env,
+        dispute_id: u64,
+    ) -> Result<Dispute, AjoError> {
+        storage::get_dispute(&env, dispute_id).ok_or(AjoError::DisputeNotFound)
+    }
+
+    /// Get all disputes for a group.
+    pub fn get_group_disputes(
+        env: Env,
+        group_id: u64,
+    ) -> Result<Vec<Dispute>, AjoError> {
+        Ok(storage::get_group_disputes(&env, group_id))
+    }
+
+    /// Apply penalty to defendant as dispute resolution.
+    fn apply_dispute_penalty(
+        env: &Env,
+        dispute: &Dispute,
+        group: &Group,
+    ) -> Result<(), AjoError> {
+        let penalty_amount = (group.contribution_amount * (group.penalty_rate as i128)) / 100;
+        storage::add_to_penalty_pool(&env, group.id, group.current_cycle, penalty_amount);
+
+        // Update/update member penalty record
+        let mut penalty_record = storage::get_member_penalty(&env, group.id, &dispute.defendant)
+            .unwrap_or(crate::types::MemberPenaltyRecord {
+                member: dispute.defendant.clone(),
+                group_id: group.id,
+                late_count: 0,
+                on_time_count: 0,
+                total_penalties: 0,
+                reliability_score: 100,
+            });
+        penalty_record.late_count += 1;
+        penalty_record.total_penalties += penalty_amount;
+        penalty_record.reliability_score = ((penalty_record.on_time_count as u32 * 100) / (penalty_record.on_time_count + penalty_record.late_count + 1) as u32).max(0);
+        storage::store_member_penalty(&env, group.id, &dispute.defendant, &penalty_record);
+
+        Ok(())
+    }
+
+    /// Remove defendant from group as resolution.
+    fn remove_member_from_group(
+        env: &Env,
+        defendant: &Address,
+        group_id: u64,
+    ) -> Result<(), AjoError> {
+        let mut group = storage::get_group(&env, group_id).ok_or(AjoError::GroupNotFound)?;
+
+        // Filter out defendant
+        let old_len = group.members.len();
+        group.members.retain(|m| m != defendant);
+
+        if group.members.len() == old_len {
+            return Err(AjoError::NotMember); // wasn't member
+        }
+
+        // Adjust payout_index if needed
+        if group.payout_index as usize >= group.members.len() {
+            group.payout_index = group.members.len() as u32;
+        }
+
+        storage::store_group(&env, group_id, &group);
+        Ok(())
+    }
+
+    /// Process refund to complainant from defendant.
+    fn process_dispute_refund(
+        env: &Env,
+        dispute: &Dispute,
+    ) -> Result<(), AjoError> {
+        let group = storage::get_group(&env, dispute.group_id).ok_or(AjoError::GroupNotFound)?;
+
+        let refund_amount = group.contribution_amount;
+
+        // Refund record for complainant
+        let refund_record = crate::types::RefundRecord {
+            group_id: dispute.group_id,
+            member: dispute.complainant.clone(),
+            amount: refund_amount,
+            timestamp: utils::get_current_timestamp(&env),
+            reason: RefundReason::DisputeRefund,
+        };
+        storage::store_refund_record(&env, dispute.group_id, &dispute.complainant, &refund_record);
+
+        events::emit_refund_processed(&env, dispute.group_id, &dispute.complainant, refund_amount, 3u32); // 3 for DisputeRefund
+
+        Ok(())
     }
 }

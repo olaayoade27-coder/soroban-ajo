@@ -162,3 +162,8 @@ pub fn is_within_grace_period(group: &crate::types::Group, current_time: u64) ->
     let grace_end = get_grace_period_end(group);
     current_time > cycle_end && current_time <= grace_end
 }
+
+/// Returns `true` if `address` is the complainant or defendant in the dispute.
+pub fn is_dispute_member(dispute: &crate::types::Dispute, address: &Address) -> bool {
+    &dispute.complainant == address || &dispute.defendant == address
+}

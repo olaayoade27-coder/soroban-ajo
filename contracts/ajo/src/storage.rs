@@ -44,6 +44,15 @@ pub enum StorageKey {
     /// Penalty pool for current cycle.
     /// Stored in persistent storage under `("PENPOOL", group_id, cycle)`.
     CyclePenaltyPool(u64, u32),
+
+    /// Dispute data keyed by numeric ID.
+    Dispute(u64),
+
+    /// Dispute vote by voter for specific dispute.
+    DisputeVote(u64, Address),
+
+    /// List of dispute IDs for a group.
+    GroupDisputeIds(u64),
 }
 
 impl StorageKey {
@@ -69,11 +78,16 @@ impl StorageKey {
             StorageKey::ContributionDetail(_, _, _) => symbol_short!("CONTREC"),
             StorageKey::MemberPenalty(_, _) => symbol_short!("PENALTY"),
             StorageKey::CyclePenaltyPool(_, _) => symbol_short!("PENPOOL"),
+            StorageKey::Dispute(_) => symbol_short!("DISPUTE"),
+            StorageKey::DisputeVote(_, _) => symbol_short!("DISPVOTE"),
+            StorageKey::GroupDisputeIds(_) => symbol_short!("DISPGIDS"),
         }
     }
 }
 
+
 /// Returns the next available group ID and atomically increments the counter.
+
 ///
 /// The counter starts at 0 and is stored in instance storage. Each call
 /// increments it by 1 and returns the new value, so the first group
@@ -519,3 +533,79 @@ pub fn get_refund_record(
     let key = (symbol_short!("REFUND"), group_id, member);
     env.storage().persistent().get(&key)
 }
+
+/// Returns the next available dispute ID and atomically increments the counter.
+///
+pub fn get_next_dispute_id(env: &Env) -> u64 {
+    let key = symbol_short!("DCOUNTER");
+    let current: u64 = env.storage().instance().get(&key).unwrap_or(0);
+    let next = current + 1;
+    env.storage().instance().set(&key, &next);
+    next
+}
+
+/// Stores a Dispute to persistent storage.
+pub fn store_dispute(env: &Env, dispute_id: u64, dispute: &crate::types::Dispute) {
+    let key = (symbol_short!("DISPUTE"), dispute_id);
+    env.storage().persistent().set(&key, dispute);
+}
+
+/// Retrieves a Dispute from persistent storage.
+pub fn get_dispute(env: &Env, dispute_id: u64) -> Option<crate::types::Dispute> {
+    let key = (symbol_short!("DISPUTE"), dispute_id);
+    env.storage().persistent().get(&key)
+}
+
+/// Stores a DisputeVote.
+pub fn store_dispute_vote(
+    env: &Env,
+    dispute_id: u64,
+    voter: &Address,
+    vote: &crate::types::DisputeVote,
+) {
+    let key = (symbol_short!("DISPVOTE"), dispute_id, voter);
+    env.storage().persistent().set(&key, vote);
+}
+
+/// Checks if voter has voted on dispute.
+pub fn has_voted_on_dispute(env: &Env, dispute_id: u64, voter: &Address) -> bool {
+    let key = (symbol_short!("DISPVOTE"), dispute_id, voter);
+    env.storage().persistent().has(&key)
+}
+
+/// Retrieves a DisputeVote.
+pub fn get_dispute_vote(
+    env: &Env,
+    dispute_id: u64,
+    voter: &Address,
+) -> Option<crate::types::DisputeVote> {
+    let key = (symbol_short!("DISPVOTE"), dispute_id, voter);
+    env.storage().persistent().get(&key)
+}
+
+/// Stores/updates group dispute IDs list (append).
+pub fn store_group_dispute_id(env: &Env, group_id: u64, dispute_id: u64) {
+    let key = (symbol_short!("DISPGIDS"), group_id);
+    let mut ids: Vec<u64> = env.storage().persistent().get(&key).unwrap_or_else(Vec::new);
+    ids.push_back(dispute_id);
+    env.storage().persistent().set(&key, &ids);
+}
+
+/// Retrieves dispute IDs for group.
+pub fn get_group_dispute_ids(env: &Env, group_id: u64) -> Vec<u64> {
+    let key = (symbol_short!("DISPGIDS"), group_id);
+    env.storage().persistent().get(&key).unwrap_or_else(Vec::new)
+}
+
+/// Retrieves all Disputes for a group by iterating IDs.
+pub fn get_group_disputes(env: &Env, group_id: u64) -> Vec<crate::types::Dispute> {
+    let mut disputes = Vec::new(env);
+    let ids = get_group_dispute_ids(env, group_id);
+    for id in ids.iter() {
+        if let Some(dispute) = get_dispute(env, *id) {
+            disputes.push_back(dispute);
+        }
+    }
+    disputes
+}
+
