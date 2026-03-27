@@ -8,6 +8,7 @@ import { NotificationHistory } from './NotificationHistory'
 import NotificationBell from './NotificationBell'
 import Onboarding from './Onboarding'
 import TourGuide from './TourGuide'
+import { ThemeToggle } from './ThemeToggle'
 import { useOnboarding } from '@/hooks/useOnboarding'
 
 interface AppLayoutProps {
@@ -61,7 +62,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg-primary transition-colors duration-300">
-    <div className="min-h-screen bg-gray-50">
       {/* Skip Links */}
       <a
         href="#main-content"
@@ -86,6 +86,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </Link>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <NotificationBell />
               <NotificationHistory />
               <div data-tour="wallet-connect">
