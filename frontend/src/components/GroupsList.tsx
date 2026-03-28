@@ -14,7 +14,7 @@ export const GroupsList: React.FC<GroupsListProps> = ({
   onGroupClick,
   onJoinGroup,
 }) => {
-  const list = groups;
+  const list = groups
 
   const statusConfig: Record<string, { badge: string; dot: string; label: string }> = {
     active: {
@@ -44,16 +44,25 @@ export const GroupsList: React.FC<GroupsListProps> = ({
         <table className="table-premium">
           <thead>
             <tr>
-              {['Name', 'Members', 'Contributions', 'Next Payout', 'Status', 'Actions'].map((col) => (
-                <th key={col} className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 dark:text-slate-400 uppercase tracking-wider">
-                  {col}
-                </th>
-              ))}
+              {['Name', 'Members', 'Contributions', 'Next Payout', 'Status', 'Actions'].map(
+                (col) => (
+                  <th
+                    key={col}
+                    className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 dark:text-slate-400 uppercase tracking-wider"
+                  >
+                    {col}
+                  </th>
+                )
+              )}
             </tr>
           </thead>
           <tbody>
             {[...Array(5)].map((_, i) => (
-              <tr key={i} className="relative overflow-hidden" style={{ animationDelay: `${i * 80}ms` }}>
+              <tr
+                key={i}
+                className="relative overflow-hidden"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
                 <td className="px-5 py-4">
                   <div className="space-y-1.5">
                     <div className="skeleton h-4 w-32 rounded-md" />
@@ -111,8 +120,16 @@ export const GroupsList: React.FC<GroupsListProps> = ({
                 Next Payout
               </div>
             </th>
-            <th><div className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider">Status</div></th>
-            <th><div className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider">Actions</div></th>
+            <th>
+              <div className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider">
+                Status
+              </div>
+            </th>
+            <th>
+              <div className="px-5 py-3.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider">
+                Actions
+              </div>
+            </th>
           </tr>
         </thead>
         <tbody>

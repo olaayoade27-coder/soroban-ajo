@@ -105,7 +105,7 @@ body {
 }
 
 .gradient-mesh {
-  background: 
+  background:
     radial-gradient(at 20% 30%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
     radial-gradient(at 80% 70%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
     radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
@@ -113,7 +113,8 @@ body {
 
 /* Animated Backgrounds */
 @keyframes gradient-shift {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -128,7 +129,8 @@ body {
 }
 
 @keyframes float-pattern {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px);
   }
   50% {
@@ -215,33 +217,34 @@ body {
     border-radius: 0.75rem;
     padding: 2px;
     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-  /* Screen Reader Only */
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border-width: 0;
-  }
+    /* Screen Reader Only */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
 
-  .not-sr-only {
-    position: static;
-    width: auto;
-    height: auto;
-    padding: 0;
-    margin: 0;
-    overflow: visible;
-    clip: auto;
-    white-space: normal;
-  }
+    .not-sr-only {
+      position: static;
+      width: auto;
+      height: auto;
+      padding: 0;
+      margin: 0;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+    }
 
-  /* Focus Visible Styles */
-  .focus-visible-ring {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2;
+    /* Focus Visible Styles */
+    .focus-visible-ring {
+      @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2;
+    }
   }
 }
 
@@ -327,7 +330,8 @@ body {
     border-width: 2px !important;
   }
 
-  button, a {
+  button,
+  a {
     text-decoration: underline;
   }
 }

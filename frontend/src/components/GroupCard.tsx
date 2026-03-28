@@ -74,7 +74,9 @@ export const GroupCard: React.FC<GroupCardProps> = ({
 
         {/* Header Skeleton */}
         <div className={`flex justify-between items-start ${isCompact ? 'mb-3' : 'mb-5'} pt-1`}>
-          <div className={`skeleton rounded-lg ${isCompact ? 'h-5 w-1/2' : isSpaciousOrElevated ? 'h-7 w-2/3' : 'h-6 w-1/2'}`} />
+          <div
+            className={`skeleton rounded-lg ${isCompact ? 'h-5 w-1/2' : isSpaciousOrElevated ? 'h-7 w-2/3' : 'h-6 w-1/2'}`}
+          />
           <div className="skeleton h-6 w-16 rounded-full" />
         </div>
 
@@ -115,11 +117,15 @@ export const GroupCard: React.FC<GroupCardProps> = ({
       onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
     >
       {/* Top Accent Bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${config.accent} opacity-80 group-hover:opacity-100 transition-opacity duration-300`} />
+      <div
+        className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${config.accent} opacity-80 group-hover:opacity-100 transition-opacity duration-300`}
+      />
 
       {/* Header */}
       <div className={`flex justify-between items-start ${isCompact ? 'mb-3' : 'mb-5'} pt-1`}>
-        <h3 className={`font-bold text-surface-900 leading-tight ${isCompact ? 'text-base' : isSpaciousOrElevated ? 'text-xl' : 'text-lg'}`}>
+        <h3
+          className={`font-bold text-surface-900 leading-tight ${isCompact ? 'text-base' : isSpaciousOrElevated ? 'text-xl' : 'text-lg'}`}
+        >
           {groupName}
         </h3>
         <span className={config.badge}>
@@ -132,7 +138,9 @@ export const GroupCard: React.FC<GroupCardProps> = ({
       <div className={`${isCompact ? 'space-y-3' : 'space-y-4'}`}>
         {/* Members */}
         <div className="flex justify-between items-center">
-          <span className={`text-surface-500 font-medium ${isCompact ? 'text-xs' : 'text-sm'}`}>Members</span>
+          <span className={`text-surface-500 font-medium ${isCompact ? 'text-xs' : 'text-sm'}`}>
+            Members
+          </span>
           <span className={`font-semibold text-surface-800 ${isCompact ? 'text-xs' : 'text-sm'}`}>
             {memberCount}/{maxMembers}
           </span>
@@ -140,10 +148,7 @@ export const GroupCard: React.FC<GroupCardProps> = ({
 
         {/* Progress Bar */}
         <div className="progress-bar">
-          <div
-            className="progress-bar-fill"
-            style={{ width: `${memberPercent}%` }}
-          />
+          <div className="progress-bar-fill" style={{ width: `${memberPercent}%` }} />
         </div>
 
         {/* Contributions */}
@@ -168,7 +173,12 @@ export const GroupCard: React.FC<GroupCardProps> = ({
         }}
       >
         View Details
-        <svg className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg
+          className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
         </svg>
       </button>

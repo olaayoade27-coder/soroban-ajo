@@ -61,154 +61,177 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-bg-primary transition-colors duration-300">
-    <div className="min-h-screen bg-gray-50">
-      {/* Skip Links */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:shadow-lg"
-      >
-        Skip to main content
-      </a>
-      <a
-        href="#navigation"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-40 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:shadow-lg"
-      >
-        Skip to navigation
-      </a>
+      <div className="min-h-screen bg-gray-50">
+        {/* Skip Links */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:shadow-lg"
+        >
+          Skip to main content
+        </a>
+        <a
+          href="#navigation"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-40 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:shadow-lg"
+        >
+          Skip to navigation
+        </a>
 
-      {/* Header */}
-      <header className="bg-white dark:bg-dark-bg-secondary shadow-sm border-b border-gray-200 dark:border-dark-border sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <Link href="/" className="flex items-center gap-2">
-              <h1 className="text-2xl md:text-3xl font-bold text-blue-600 dark:text-indigo-400">🪙 Ajo</h1>
-              <span className="hidden sm:inline text-gray-600 dark:text-slate-400 text-sm">Decentralized Savings</span>
-            </Link>
+        {/* Header */}
+        <header className="bg-white dark:bg-dark-bg-secondary shadow-sm border-b border-gray-200 dark:border-dark-border sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-4">
+              <Link href="/" className="flex items-center gap-2">
+                <h1 className="text-2xl md:text-3xl font-bold text-blue-600 dark:text-indigo-400">
+                  🪙 Ajo
+                </h1>
+                <span className="hidden sm:inline text-gray-600 dark:text-slate-400 text-sm">
+                  Decentralized Savings
+                </span>
+              </Link>
 
-            <div className="flex items-center gap-3">
-              <NotificationBell />
-              <NotificationHistory />
-              <div data-tour="wallet-connect">
-                <WalletConnector />
+              <div className="flex items-center gap-3">
+                <NotificationBell />
+                <NotificationHistory />
+                <div data-tour="wallet-connect">
+                  <WalletConnector />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Navigation */}
-          <nav id="navigation" className="flex gap-1 -mb-px overflow-x-auto" aria-label="Main navigation">
-            {navLinks.map((link) => {
-              const isActive = pathname === link.href
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  data-tour={link.dataTour}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                    isActive
-                      ? 'border-blue-600 dark:border-indigo-400 text-blue-600 dark:text-indigo-400'
-                      : 'border-transparent text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 hover:border-gray-300 dark:hover:border-slate-600'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d={link.icon}
-                    />
-                  </svg>
-                  <span className="hidden sm:inline">{link.label}</span>
-                </Link>
-              )
-            })}
-          </nav>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main id="main-content" tabIndex={-1}>{children}</main>
-
-      {/* Onboarding & Tour */}
-      <Onboarding />
-      <TourGuide />
-
-      {/* Footer */}
-      <footer className="bg-white dark:bg-dark-bg-secondary border-t border-gray-200 dark:border-dark-border mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Ajo</h3>
-              <p className="text-gray-600 dark:text-slate-400 text-sm">
-                Decentralized savings groups powered by Stellar blockchain.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Resources</h3>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <Link href="/docs" className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400">
-                    Documentation
+            {/* Navigation */}
+            <nav
+              id="navigation"
+              className="flex gap-1 -mb-px overflow-x-auto"
+              aria-label="Main navigation"
+            >
+              {navLinks.map((link) => {
+                const isActive = pathname === link.href
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    data-tour={link.dataTour}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'border-blue-600 dark:border-indigo-400 text-blue-600 dark:text-indigo-400'
+                        : 'border-transparent text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100 hover:border-gray-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d={link.icon}
+                      />
+                    </svg>
+                    <span className="hidden sm:inline">{link.label}</span>
                   </Link>
-                </li>
-                <li>
-                  <Link href="/community" className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400">
-                    Community
-                  </Link>
-                </li>
-                <li>
-                  <a
-                    href="https://stellar.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
-                  >
-                    Stellar Network
-                  </a>
-                </li>
-              </ul>
+                )
+              })}
+            </nav>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main id="main-content" tabIndex={-1}>
+          {children}
+        </main>
+
+        {/* Onboarding & Tour */}
+        <Onboarding />
+        <TourGuide />
+
+        {/* Footer */}
+        <footer className="bg-white dark:bg-dark-bg-secondary border-t border-gray-200 dark:border-dark-border mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Ajo</h3>
+                <p className="text-gray-600 dark:text-slate-400 text-sm">
+                  Decentralized savings groups powered by Stellar blockchain.
+                </p>
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Resources</h3>
+                <ul className="space-y-2 text-sm">
+                  <li>
+                    <Link
+                      href="/docs"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      Documentation
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/community"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      Community
+                    </Link>
+                  </li>
+                  <li>
+                    <a
+                      href="https://stellar.org"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      Stellar Network
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Connect</h3>
+                <ul className="space-y-2 text-sm">
+                  <li>
+                    <a
+                      href="https://github.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      GitHub
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://twitter.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      Twitter
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://discord.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
+                    >
+                      Discord
+                    </a>
+                  </li>
+                </ul>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-3">Connect</h3>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a
-                    href="https://github.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
-                  >
-                    GitHub
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://twitter.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
-                  >
-                    Twitter
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://discord.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-indigo-400"
-                  >
-                    Discord
-                  </a>
-                </li>
-              </ul>
+            <div className="mt-8 pt-8 border-t border-gray-200 dark:border-dark-border text-center text-sm text-gray-600 dark:text-slate-400">
+              <p>&copy; {new Date().getFullYear()} Ajo. All rights reserved.</p>
             </div>
           </div>
-          <div className="mt-8 pt-8 border-t border-gray-200 dark:border-dark-border text-center text-sm text-gray-600 dark:text-slate-400">
-            <p>&copy; {new Date().getFullYear()} Ajo. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   )
 }

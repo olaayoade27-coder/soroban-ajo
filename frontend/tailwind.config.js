@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-darkMode: 'class',
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}', './stories/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -91,8 +91,22 @@ darkMode: 'class',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-        display: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        sans: [
+          'Inter',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
+        display: [
+          'Inter',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
         mono: ['Fira Code', 'Courier New', 'monospace'],
       },
       fontSize: {
@@ -162,9 +176,12 @@ darkMode: 'class',
         'pattern-waves': "url('/patterns/waves.svg')",
         'pattern-mesh': "url('/patterns/mesh.svg')",
         'gradient-stellar': 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)',
-        'gradient-stellar-subtle': 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)',
-        'gradient-radial-glow': 'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 70%)',
-        'gradient-mesh': 'radial-gradient(at 20% 30%, rgba(99, 102, 241, 0.15) 0px, transparent 50%), radial-gradient(at 80% 70%, rgba(168, 85, 247, 0.15) 0px, transparent 50%), radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.1) 0px, transparent 50%)',
+        'gradient-stellar-subtle':
+          'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)',
+        'gradient-radial-glow':
+          'radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 70%)',
+        'gradient-mesh':
+          'radial-gradient(at 20% 30%, rgba(99, 102, 241, 0.15) 0px, transparent 50%), radial-gradient(at 80% 70%, rgba(168, 85, 247, 0.15) 0px, transparent 50%), radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.1) 0px, transparent 50%)',
         // Issue #317 gradient system
         'gradient-primary': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         'gradient-success': 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
@@ -189,9 +206,9 @@ darkMode: 'class',
         float: 'float 3s ease-in-out infinite',
         'spin-slow': 'spin 3s linear infinite',
         // New micro-interaction animations
-        'ripple': 'ripple 600ms ease-out',
-        'shake': 'shake 0.3s ease-in-out',
-        'lift': 'lift 0.3s ease-out',
+        ripple: 'ripple 600ms ease-out',
+        shake: 'shake 0.3s ease-in-out',
+        lift: 'lift 0.3s ease-out',
         'slide-in-up': 'slideInUp 0.3s ease-out',
         'bounce-in': 'bounceIn 0.5s ease-out',
       },
@@ -302,4 +319,15 @@ darkMode: 'class',
     },
   },
   plugins: [],
+  extend: {
+    keyframes: {
+      shimmer: {
+        '0%': { transform: 'translateX(-100%)' },
+        '100%': { transform: 'translateX(100%)' },
+      },
+    },
+    animation: {
+      shimmer: 'shimmer 1.5s infinite linear',
+    },
+  },
 }
