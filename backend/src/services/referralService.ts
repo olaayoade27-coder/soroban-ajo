@@ -1,24 +1,84 @@
-import { PrismaClient, Referral } from '@prisma/client';
-import { ReferralCodeGenerator } from '../utils/ReferralCodeGenerator';
+import { PrismaClient, Referral } from '@prisma/client'
+import { ReferralCodeGenerator } from '../utils/ReferralCodeGenerator'
+import type { ReferralMetadata } from './FraudDetector'
+
+export interface ReferralRewardDistributor {
+  distributeReferralReward(referrerId: string, refereeId: string): Promise<void>
+}
+
+export interface ReferralFraudDetector {
+  checkReferral(
+    referrerId: string,
+    refereeId: string,
+    metadata: ReferralMetadata
+  ): Promise<{
+    flags: Array<{
+      type: string
+      details: unknown
+    }>
+    shouldBlock: boolean
+  }>
+}
+
+export interface ReferralAnalyticsTracker {
+  saveEvent(type: string, data: Record<string, unknown>): Promise<void>
+}
 
 export interface ReferralStats {
+  referralCode: string | null;
   totalReferrals: number;
   activeReferrals: number;
   pendingReferrals: number;
   completedReferrals: number;
+  flaggedReferrals: number;
+  conversionRate: number;
+  totalRewardsEarned: number;
   referrals: Array<{
+    id: string;
     refereeId: string;
+    referralCode: string;
     status: string;
     createdAt: Date;
     completedAt?: Date | null;
   }>;
 }
 
+export interface ReferralAnalytics {
+  summary: {
+    totalReferrals: number
+    completedReferrals: number
+    pendingReferrals: number
+    flaggedReferrals: number
+    conversionRate: number
+  }
+  statusBreakdown: Array<{
+    status: string
+    count: number
+  }>
+  timeline: Array<{
+    date: string
+    referrals: number
+    completions: number
+  }>
+}
+
+export interface CreateReferralInput {
+  referrerId: string
+  refereeId: string
+  code: string
+  metadata?: ReferralMetadata
+}
+
 /**
  * Service for managing referral codes and relationships
  */
 export class ReferralService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private rewardDistributor?: ReferralRewardDistributor,
+    private fraudDetector?: ReferralFraudDetector,
+    private analyticsTracker?: ReferralAnalyticsTracker
+  ) {}
 
   /**
    * Generate or retrieve referral code for a user
@@ -29,14 +89,14 @@ export class ReferralService {
     // Check if user already has a referral code
     const existing = await this.prisma.referralCode.findUnique({
       where: { userId },
-    });
+    })
 
     if (existing) {
-      return existing.code;
+      return existing.code
     }
 
     // Generate new unique code
-    const code = await ReferralCodeGenerator.generateUnique(this.prisma);
+    const code = await ReferralCodeGenerator.generateUnique(this.prisma)
 
     // Store the code
     await this.prisma.referralCode.create({
@@ -44,9 +104,9 @@ export class ReferralService {
         userId,
         code,
       },
-    });
+    })
 
-    return code;
+    return code
   }
 
   /**
@@ -57,9 +117,9 @@ export class ReferralService {
   async getReferralCode(userId: string): Promise<string | null> {
     const referralCode = await this.prisma.referralCode.findUnique({
       where: { userId },
-    });
+    })
 
-    return referralCode?.code || null;
+    return referralCode?.code || null
   }
 
   /**
@@ -70,15 +130,15 @@ export class ReferralService {
   async validateReferralCode(code: string): Promise<boolean> {
     // First check format
     if (!ReferralCodeGenerator.isValidFormat(code)) {
-      return false;
+      return false
     }
 
     // Check if code exists in database
     const referralCode = await this.prisma.referralCode.findUnique({
       where: { code },
-    });
+    })
 
-    return referralCode !== null;
+    return referralCode !== null
   }
 
   /**
@@ -90,9 +150,9 @@ export class ReferralService {
     const referralCode = await this.prisma.referralCode.findUnique({
       where: { code },
       select: { userId: true },
-    });
+    })
 
-    return referralCode?.userId || null;
+    return referralCode?.userId || null
   }
 
   /**
@@ -103,36 +163,41 @@ export class ReferralService {
    * @returns Created referral record
    * @throws Error if referral is invalid
    */
-  async createReferral(
-    referrerId: string,
-    refereeId: string,
-    code: string
-  ): Promise<Referral> {
+  async createReferral(input: CreateReferralInput): Promise<Referral> {
+    const { referrerId, refereeId, code, metadata } = input
     // Validate: Cannot refer yourself
     if (referrerId === refereeId) {
-      throw new Error('Cannot refer yourself');
+      throw new Error('Cannot refer yourself')
     }
 
     // Validate: Referee can only be referred once
     const existingReferral = await this.prisma.referral.findUnique({
       where: { refereeId },
-    });
+    })
 
     if (existingReferral) {
-      throw new Error('User has already been referred');
+      throw new Error('User has already been referred')
     }
 
     // Validate: Referral code must exist and belong to referrer
     const referralCode = await this.prisma.referralCode.findUnique({
       where: { code },
-    });
+    })
 
     if (!referralCode) {
-      throw new Error('Invalid referral code');
+      throw new Error('Invalid referral code')
     }
 
     if (referralCode.userId !== referrerId) {
-      throw new Error('Referral code does not belong to referrer');
+      throw new Error('Referral code does not belong to referrer')
+    }
+
+    let initialStatus = 'PENDING'
+    if (metadata && this.fraudDetector) {
+      const fraudCheck = await this.fraudDetector.checkReferral(referrerId, refereeId, metadata)
+      if (fraudCheck.shouldBlock) {
+        initialStatus = 'FLAGGED'
+      }
     }
 
     // Create referral relationship
@@ -141,9 +206,24 @@ export class ReferralService {
         referrerId,
         refereeId,
         referralCode: code,
-        status: 'PENDING',
+        status: initialStatus,
       },
-    });
+    })
+
+    if (metadata && this.fraudDetector) {
+      const fraudCheck = await this.fraudDetector.checkReferral(referrerId, refereeId, metadata)
+      for (const flag of fraudCheck.flags) {
+        await this.prisma.fraudFlag.create({
+          data: {
+            referralId: referral.id,
+            flagType: flag.type,
+            severity: fraudCheck.shouldBlock ? 'HIGH' : 'MEDIUM',
+            details: JSON.stringify(flag.details ?? {}),
+            status: 'PENDING',
+          },
+        })
+      }
+    }
 
     // Increment referrer's total invites in gamification
     await this.prisma.userGamification.upsert({
@@ -155,36 +235,66 @@ export class ReferralService {
         userId: referrerId,
         totalInvites: 1,
       },
-    });
+    })
 
-    return referral;
+    await this.trackEvent('referral_created', {
+      referrerId,
+      refereeId,
+      referralId: referral.id,
+      status: referral.status,
+    })
+
+    return referral
   }
 
   /**
    * Mark a referral as completed (when referee makes first contribution)
    * @param refereeId - User who was referred
    */
-  async completeReferral(refereeId: string): Promise<void> {
+  async completeReferral(refereeId: string): Promise<Referral | null> {
     const referral = await this.prisma.referral.findUnique({
       where: { refereeId },
-    });
+    })
 
     if (!referral) {
-      return; // No referral to complete
+      return null
     }
 
     if (referral.status === 'COMPLETED') {
-      return; // Already completed
+      return referral
+    }
+
+    if (referral.status === 'FLAGGED') {
+      return referral
     }
 
     // Update referral status
-    await this.prisma.referral.update({
+    const completedReferral = await this.prisma.referral.update({
       where: { id: referral.id },
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
       },
-    });
+    })
+
+    if (this.rewardDistributor) {
+      try {
+        await this.rewardDistributor.distributeReferralReward(
+          completedReferral.referrerId,
+          completedReferral.refereeId
+        )
+      } catch {
+        // Reward configuration can be absent in local/test environments.
+      }
+    }
+
+    await this.trackEvent('referral_completed', {
+      referralId: completedReferral.id,
+      referrerId: completedReferral.referrerId,
+      refereeId: completedReferral.refereeId,
+    })
+
+    return completedReferral
   }
 
   /**
@@ -196,26 +306,42 @@ export class ReferralService {
     const referrals = await this.prisma.referral.findMany({
       where: { referrerId: userId },
       select: {
+        id: true,
         refereeId: true,
+        referralCode: true,
         status: true,
         createdAt: true,
         completedAt: true,
       },
       orderBy: { createdAt: 'desc' },
-    });
+    })
 
-    const totalReferrals = referrals.length;
-    const activeReferrals = referrals.filter((r) => r.status === 'ACTIVE').length;
-    const pendingReferrals = referrals.filter((r) => r.status === 'PENDING').length;
-    const completedReferrals = referrals.filter((r) => r.status === 'COMPLETED').length;
+    const referralCode = await this.getReferralCode(userId)
+    const rewardCount = await this.prisma.reward.count({
+      where: {
+        userId,
+        source: 'REFERRAL',
+      },
+    })
+
+    const totalReferrals = referrals.length
+    const activeReferrals = referrals.filter((r) => r.status === 'ACTIVE').length
+    const pendingReferrals = referrals.filter((r) => r.status === 'PENDING').length
+    const completedReferrals = referrals.filter((r) => r.status === 'COMPLETED').length
+    const flaggedReferrals = referrals.filter((r) => r.status === 'FLAGGED').length
+    const conversionRate = totalReferrals === 0 ? 0 : completedReferrals / totalReferrals
 
     return {
+      referralCode,
       totalReferrals,
       activeReferrals,
       pendingReferrals,
       completedReferrals,
+      flaggedReferrals,
+      conversionRate,
+      totalRewardsEarned: rewardCount,
       referrals,
-    };
+    }
   }
 
   /**
@@ -230,6 +356,108 @@ export class ReferralService {
         referrerId: userId,
         ...(status && { status }),
       },
-    });
+    })
+  }
+
+  async getReferralAnalytics(userId: string): Promise<ReferralAnalytics> {
+    const referrals = await this.prisma.referral.findMany({
+      where: { referrerId: userId },
+      select: {
+        status: true,
+        createdAt: true,
+        completedAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    const dailyMap = new Map<string, { referrals: number; completions: number }>()
+    for (const referral of referrals) {
+      const createdKey = referral.createdAt.toISOString().slice(0, 10)
+      const createdEntry = dailyMap.get(createdKey) ?? { referrals: 0, completions: 0 }
+      createdEntry.referrals += 1
+      dailyMap.set(createdKey, createdEntry)
+
+      if (referral.completedAt) {
+        const completedKey = referral.completedAt.toISOString().slice(0, 10)
+        const completedEntry = dailyMap.get(completedKey) ?? { referrals: 0, completions: 0 }
+        completedEntry.completions += 1
+        dailyMap.set(completedKey, completedEntry)
+      }
+    }
+
+    const statusBreakdown = ['PENDING', 'ACTIVE', 'COMPLETED', 'FLAGGED'].map((status) => ({
+      status,
+      count: referrals.filter((referral) => referral.status === status).length,
+    }))
+
+    const totalReferrals = referrals.length
+    const completedReferrals = statusBreakdown.find((entry) => entry.status === 'COMPLETED')?.count ?? 0
+    const pendingReferrals = statusBreakdown.find((entry) => entry.status === 'PENDING')?.count ?? 0
+    const flaggedReferrals = statusBreakdown.find((entry) => entry.status === 'FLAGGED')?.count ?? 0
+
+    return {
+      summary: {
+        totalReferrals,
+        completedReferrals,
+        pendingReferrals,
+        flaggedReferrals,
+        conversionRate: totalReferrals === 0 ? 0 : completedReferrals / totalReferrals,
+      },
+      statusBreakdown,
+      timeline: Array.from(dailyMap.entries()).map(([date, values]) => ({
+        date,
+        referrals: values.referrals,
+        completions: values.completions,
+      })),
+    }
+  }
+
+  async getReferralLeaderboard(limit = 10) {
+    const grouped = await this.prisma.referral.groupBy({
+      by: ['referrerId'],
+      _count: {
+        referrerId: true,
+      },
+      where: {
+        status: {
+          in: ['PENDING', 'ACTIVE', 'COMPLETED'],
+        },
+      },
+      orderBy: {
+        _count: {
+          referrerId: 'desc',
+        },
+      },
+      take: limit,
+    })
+
+    return Promise.all(
+      grouped.map(async (entry, index) => {
+        const completedReferrals = await this.prisma.referral.count({
+          where: {
+            referrerId: entry.referrerId,
+            status: 'COMPLETED',
+          },
+        })
+
+        return {
+          rank: index + 1,
+          userId: entry.referrerId,
+          totalReferrals: entry._count.referrerId,
+          completedReferrals,
+        }
+      })
+    )
+  }
+
+  private async trackEvent(type: string, data: Record<string, unknown>): Promise<void> {
+    if (!this.analyticsTracker) {
+      return
+    }
+
+    await this.analyticsTracker.saveEvent(type, {
+      category: 'referral',
+      ...data,
+    })
   }
 }

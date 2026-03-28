@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
+import { createServer } from 'http'
 import { errorHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
 import { groupsRouter } from './routes/groups'
@@ -19,11 +20,28 @@ import { createDdosProtector } from './middleware/ddosProtector'
 import { kycRouter } from './routes/kyc'
 import { disputesRouter } from './routes/disputes'
 import rewardsRouter from './routes/rewards'
-import { exportsRouter } from './routes/exports'
+import referralsRouter from './routes/referrals'
+import { chatRouter } from './routes/chat'
+import { notificationsRouter } from './routes/notifications'
+import { chatService } from './services/chatService'
+import { notificationService } from './services/notificationService'
+import { logger } from './utils/logger'
 
 dotenv.config()
 
 const app = express()
+const server = createServer(app)
+
+// Initialize Socket.IO with chat service
+chatService.init(server)
+
+// Attach notification namespace to the same Socket.IO server
+const chatIO = chatService.getIO()
+if (chatIO) {
+  notificationService.init(chatIO)
+} else {
+  logger.warn('chatService IO not available; notifications namespace not initialized')
+}
 
 // Middleware
 app.use(helmet())
@@ -58,7 +76,9 @@ app.use('/api/goals', createUserLimiter(), goalsRouter)
 app.use('/api/kyc', kycRouter)
 app.use('/api/disputes', disputesRouter)
 app.use('/api/rewards', rewardsRouter)
-app.use('/api/exports', createUserLimiter(), exportsRouter)
+app.use('/api/referrals', referralsRouter)
+app.use('/api/chat', createUserLimiter(), chatRouter)
+app.use('/api/notifications', createUserLimiter(), notificationsRouter)
 
 // 404 handler
 app.use((req, res) => {
@@ -71,4 +91,24 @@ app.use((req, res) => {
 // Error handling
 app.use(errorHandler)
 
+// Start server
+const PORT = process.env.PORT || 3001
+server.listen(PORT, () => {
+  logger.info(`Server started on port ${PORT}`, { env: process.env.NODE_ENV || 'development' })
+  logger.info('Socket.IO chat service initialized')
+})
+
+// Graceful shutdown
+const shutdown = async () => {
+  logger.info('Shutting down gracefully...')
+  server.close(() => {
+    logger.info('HTTP server closed')
+    process.exit(0)
+  })
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
+
+export { app, server }
 export default app

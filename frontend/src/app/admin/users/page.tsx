@@ -12,6 +12,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [actionModal, setActionModal] = useState<any>(null);
   const [actionReason, setActionReason] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const limit = 20;
   const pages = Math.ceil(total / limit);
@@ -20,7 +21,7 @@ export default function UsersPage() {
     setLoading(true);
     const token = localStorage.getItem('adminToken');
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (search) params.set('search', search);
+    if (debouncedSearch) params.set('search', debouncedSearch);
     if (statusFilter) params.set('status', statusFilter);
 
     fetch(`/api/admin/users?${params}`, {
@@ -31,7 +32,12 @@ export default function UsersPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchUsers(); }, [page, statusFilter]);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => { fetchUsers(); }, [page, statusFilter, debouncedSearch]);
 
   const handleAction = async () => {
     if (!actionModal) return;
@@ -102,12 +108,13 @@ export default function UsersPage() {
               <th className="text-left px-4 py-3">User</th>
               <th className="text-left px-4 py-3">Status</th>
               <th className="text-left px-4 py-3">Joined</th>
+              <th className="text-left px-4 py-3">Activity</th>
               <th className="text-right px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800/50">
             {loading && (
-              <tr><td colSpan={4} className="text-center py-8 text-gray-500 text-xs animate-pulse">Loading...</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-gray-500 text-xs animate-pulse">Loading...</td></tr>
             )}
             {!loading && users.map(user => (
               <tr key={user.id} className="hover:bg-gray-800/40 transition-colors">
@@ -122,6 +129,15 @@ export default function UsersPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {new Date(user.createdAt).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-400">
+                  <div>{user._count?.groups ?? 0} groups</div>
+                  <div>{user._count?.transactions ?? 0} txns</div>
+                  {user.suspensionReason && (
+                    <div className="text-amber-400 truncate max-w-[14rem]" title={user.suspensionReason}>
+                      {user.suspensionReason}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">

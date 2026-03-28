@@ -108,8 +108,8 @@ export const GroupCard: React.FC<GroupCardProps> = ({
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : -1}
-      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
-      aria-label={onClick ? `View details for ${groupName}` : undefined}
+      aria-label={onClick ? `${groupName} group, ${config.label} status` : undefined}
+      onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick() : undefined}
     >
       {/* Top Accent Bar */}
       <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${config.accent} opacity-80 group-hover:opacity-100 transition-opacity duration-300`} />
@@ -136,7 +136,7 @@ export const GroupCard: React.FC<GroupCardProps> = ({
         </div>
 
         {/* Progress Bar */}
-        <div className="progress-bar">
+        <div className="progress-bar" role="progressbar" aria-valuenow={memberPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`${memberCount} of ${maxMembers} members`}>
           <div
             className="progress-bar-fill"
             style={{ width: `${memberPercent}%` }}
@@ -159,6 +159,7 @@ export const GroupCard: React.FC<GroupCardProps> = ({
       {/* Action Button */}
       <button
         className={`btn-primary w-full ${isCompact ? 'mt-4 py-2 text-xs' : 'mt-5 py-2.5 text-sm'}`}
+        aria-label={`View details for ${groupName}`}
         onClick={(e) => {
           e.stopPropagation()
           onClick?.()

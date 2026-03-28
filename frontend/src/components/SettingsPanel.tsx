@@ -1,21 +1,34 @@
 'use client'
 
 import React, { useState } from 'react'
-import toast from 'react-hot-toast'
-import { useTheme } from '@/context/ThemeContext'
-import { useOnboarding } from '@/hooks/useOnboarding'
+
+import { EmailNotificationPreferences } from '@/components/EmailNotificationPreferences'
+import { TwoFactorSettings } from '@/components/TwoFactorSettings'
 import type { UserPreferences } from '@/types/profile'
+import { defaultEmailPreferences } from '@/types/profile'
+import toast from 'react-hot-toast'
+import { useOnboarding } from '@/hooks/useOnboarding'
+import { useTheme } from '@/context/ThemeContext'
 
 interface SettingsPanelProps {
   preferences: UserPreferences
   onSave: (preferences: Partial<UserPreferences>) => Promise<void>
   isLoading?: boolean
+  /** User's verified email address, passed through to EmailNotificationPreferences */
+  email?: string
 }
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSave, isLoading = false }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({
+  preferences,
+  onSave,
+  isLoading = false,
+  email,
+}) => {
   const { setTheme } = useTheme()
   const { replayTutorial } = useOnboarding()
-  const [activeTab, setActiveTab] = useState<'notifications' | 'privacy' | 'display'>('notifications')
+  const [activeTab, setActiveTab] = useState<'notifications' | 'privacy' | 'display' | 'security'>(
+    'notifications'
+  )
   const [localPreferences, setLocalPreferences] = useState(preferences)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -35,7 +48,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
       ...prev,
       [section]: {
         ...prev[section],
-        [key]: !prev[section][key as keyof typeof prev[typeof section]],
+        [key]: !prev[section][key as keyof (typeof prev)[typeof section]],
       },
     }))
   }
@@ -66,9 +79,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
   const hasChanges = JSON.stringify(preferences) !== JSON.stringify(localPreferences)
 
   const tabs = [
-    { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
-    { id: 'privacy', label: 'Privacy', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
-    { id: 'display', label: 'Display', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
+    },
+    {
+      id: 'privacy',
+      label: 'Privacy',
+      icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
+    },
+    {
+      id: 'display',
+      label: 'Display',
+      icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+    },
+    {
+      id: 'security',
+      label: 'Security',
+      icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622C17.176 19.29 21 14.591 21 9c0-1.042-.133-2.052-.382-3.016z',
+    },
   ]
 
   if (isLoading) {
@@ -110,16 +140,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
       <div className="p-8">
         {/* Notifications Tab */}
         {activeTab === 'notifications' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {/* General channel toggles */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Notification Preferences</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">
+                Notification Channels
+              </h3>
               <div className="space-y-4">
-                <ToggleItem
-                  label="Email Notifications"
-                  description="Receive updates via email"
-                  checked={localPreferences.notifications.email}
-                  onChange={() => handleToggle('notifications', 'email')}
-                />
                 <ToggleItem
                   label="Push Notifications"
                   description="Receive browser push notifications"
@@ -146,6 +173,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
                 />
               </div>
             </div>
+
+            {/* Granular email preferences */}
+            <div className="pt-6 border-t border-gray-200 dark:border-slate-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-1">
+                Email Notifications
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+                Choose which events trigger an email and how often to receive them.
+              </p>
+              <EmailNotificationPreferences
+                value={localPreferences.emailNotifications ?? defaultEmailPreferences}
+                onChange={(emailPrefs) =>
+                  setLocalPreferences((prev) => ({ ...prev, emailNotifications: emailPrefs }))
+                }
+                email={email}
+              />
+            </div>
           </div>
         )}
 
@@ -153,7 +197,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
         {activeTab === 'privacy' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Privacy Settings</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">
+                Privacy Settings
+              </h3>
               <div className="space-y-4">
                 <ToggleItem
                   label="Show Profile"
@@ -182,7 +228,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
         {activeTab === 'display' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Display Settings</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">
+                Display Settings
+              </h3>
               <div className="space-y-6">
                 <SelectItem
                   label="Theme"
@@ -221,14 +269,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
 
               {/* Tutorial Section */}
               <div className="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-4">Tutorial</h4>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-slate-100 mb-4">
+                  Tutorial
+                </h4>
                 <button
                   onClick={handleReplayTutorial}
                   className="w-full px-4 py-3 bg-blue-50 dark:bg-indigo-900/30 text-blue-600 dark:text-indigo-400 rounded-lg hover:bg-blue-100 dark:hover:bg-indigo-900/50 transition-colors font-medium flex items-center justify-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
                   </svg>
                   Replay Tutorial
                 </button>
@@ -236,6 +296,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
             </div>
           </div>
         )}
+
+        {activeTab === 'security' && <TwoFactorSettings />}
 
         {/* Save Button */}
         {hasChanges && (
@@ -254,7 +316,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ preferences, onSav
                 ) : (
                   <>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
                     </svg>
                     Save Changes
                   </>
@@ -313,7 +380,13 @@ interface SelectItemProps {
   onChange: (value: string) => void
 }
 
-const SelectItem: React.FC<SelectItemProps> = ({ label, description, value, options, onChange }) => (
+const SelectItem: React.FC<SelectItemProps> = ({
+  label,
+  description,
+  value,
+  options,
+  onChange,
+}) => (
   <div>
     <label className="block font-medium text-gray-900 dark:text-slate-100 mb-1">{label}</label>
     <p className="text-sm text-gray-600 dark:text-slate-400 mb-3">{description}</p>

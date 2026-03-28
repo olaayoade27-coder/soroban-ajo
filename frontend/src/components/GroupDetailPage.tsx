@@ -5,6 +5,7 @@
 import React, { useState } from 'react'
 import { ContributionForm } from './ContributionForm'
 import { MemberList } from './MemberList'
+import { MemberProfileCard } from './MemberProfileCard'
 import { TransactionHistory } from './TransactionHistory'
 import InviteModal from './InviteModal'
 import { useGroupDetail, useGroupMembers } from '../hooks/useContractData'
@@ -167,10 +168,23 @@ export const GroupDetailPage: React.FC<GroupDetailPageProps> = ({
           )}
 
           {activeTab === 'members' && (
-            <>
-              {/* MemberList now fetches its own data via useGroupMembers hook */}
-              <MemberList groupId={groupId} />
-            </>
+            <div className="space-y-4">
+              {/* Profile cards grid */}
+              {members && members.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {members.map((member) => (
+                    <MemberProfileCard
+                      key={member.address}
+                      member={member}
+                      groupId={groupId}
+                    />
+                  ))}
+                </div>
+              ) : (
+                /* Fallback to table view */
+                <MemberList groupId={groupId} />
+              )}
+            </div>
           )}
 
           {activeTab === 'history' && <TransactionHistory groupId={groupId} />}
