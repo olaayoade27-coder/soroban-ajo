@@ -3,13 +3,14 @@ import * as Sentry from '@sentry/node'
 import { captureMonitoringError } from '../config/logger.config'
 import { createModuleLogger } from '../utils/logger'
 import { AppError, ErrorFactory } from '../errors/AppError'
-import { ZodError } from 'zod'
+import { ErrorMapper } from '../utils/errorMapper'
 import { buildRequestContext, sanitizeLogData, serializeError } from '../utils/logHelpers'
 
 const logger = createModuleLogger('ErrorHandler')
 
 // Re-export AppError for use in other modules
 export { AppError, ErrorFactory } from '../errors/AppError'
+export { ErrorMapper } from '../utils/errorMapper'
 
 /**
  * Global error handling middleware
@@ -21,25 +22,8 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
-  // Convert unknown errors to AppError
-  let error: AppError
-
-  // Handle Zod validation errors
-  if (err instanceof ZodError) {
-    error = new AppError(
-      'Validation failed',
-      'VALIDATION_ERROR',
-      400,
-      err.errors.map((e) => ({
-        path: e.path.join('.'),
-        message: e.message,
-      }))
-    )
-  } else if (err instanceof AppError) {
-    error = err
-  } else {
-    error = ErrorFactory.fromUnknown(err)
-  }
+  // Map error to AppError using ErrorMapper
+  const error = ErrorMapper.mapError(err)
 
   // Log error with appropriate level
   const logLevel = error.statusCode >= 500 ? 'error' : 'warn'
@@ -47,6 +31,7 @@ export const errorHandler = (
     ...buildRequestContext(req, {
       requestId: res.locals.requestId,
       statusCode: error.statusCode,
+      errorCode: error.code,
       body: sanitizeLogData(req.body),
       headers: sanitizeLogData({
         'user-agent': req.get('user-agent'),
